@@ -569,16 +569,33 @@
   }
 
   function switchSession() {
-    if (isWork) recordSession();
-
-    isWork = !isWork;
-    timeLeft = isWork ? workMinutes * 60 : BREAK_DURATION;
-    document.body.classList.toggle('break-mode', !isWork);
-    sessionLabel.textContent = isWork ? 'Work Session' : 'Break Time';
-
-    playNotification();
-    triggerFlash();
-    updateDisplay();
+    if (isWork) {
+      // Work finished -> record it and auto-start the 10-minute rest.
+      recordSession();
+      isWork = false;
+      timeLeft = REST_DURATION;
+      document.body.classList.add('break-mode');
+      sessionLabel.textContent = 'Break Time';
+      playNotification();
+      triggerFlash();
+      updateLengthToggleUI();
+      updateDisplay();
+      // running / hasStarted stay true: the rest continues automatically.
+    } else {
+      // Rest finished -> arm the next pomodoro but wait for the user to press Start.
+      isWork = true;
+      timeLeft = workMinutes * 60;
+      document.body.classList.remove('break-mode');
+      sessionLabel.textContent = 'Work Session';
+      playNotification();
+      triggerFlash();
+      stopInterval();
+      hasStarted = false;
+      mainBtn.textContent = 'Start';
+      timerFraction.classList.remove('visible');
+      updateLengthToggleUI();
+      updateDisplay();
+    }
   }
 
   // ── Timer controls ──
@@ -589,6 +606,12 @@
     } else {
       switchSession();
     }
+  }
+
+  function stopInterval() {
+    running = false;
+    clearInterval(interval);
+    interval = null;
   }
 
   function start() {
@@ -602,15 +625,13 @@
   }
 
   function pause() {
-    running = false;
-    clearInterval(interval);
-    interval = null;
+    stopInterval();
     mainBtn.textContent = 'Resume';
     updateLengthToggleUI();
   }
 
   function reset() {
-    pause();
+    stopInterval();
     isWork = true;
     hasStarted = false;
     timeLeft = workMinutes * 60;
@@ -618,8 +639,8 @@
     sessionLabel.textContent = 'Work Session';
     mainBtn.textContent = 'Start';
     timerFraction.classList.remove('visible');
-    updateDisplay();
     updateLengthToggleUI();
+    updateDisplay();
   }
 
   // ── Event listeners ──
