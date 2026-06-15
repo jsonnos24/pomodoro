@@ -535,7 +535,12 @@
     len25Btn.classList.toggle('active', workMinutes === 25);
     len50Btn.classList.toggle('active', workMinutes === 50);
     // Locked while a session is started/running; editable only when idle/armed.
-    lengthToggle.classList.toggle('locked', hasStarted || running);
+    const locked = hasStarted || running;
+    lengthToggle.classList.toggle('locked', locked);
+    // Also disable the buttons so keyboard users can't trigger them while locked
+    // (pointer-events:none only blocks mouse/touch).
+    len25Btn.disabled = locked;
+    len50Btn.disabled = locked;
   }
 
   function setLength(minutes) {
@@ -544,6 +549,8 @@
     const data = loadData();
     data.lengthPref = minutes;
     saveData(data);
+    // When idle, isWork is always true (reset/init force it), so this re-arms the
+    // displayed work timer to the new length. The guard is harmless defense.
     if (isWork) {
       timeLeft = workMinutes * 60;
       updateDisplay();
