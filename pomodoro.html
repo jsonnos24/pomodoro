@@ -580,16 +580,17 @@
       triggerFlash();
       updateLengthToggleUI();
       updateDisplay();
-      // running / hasStarted stay true: the rest continues automatically.
+      // running / hasStarted stay true so the rest keeps ticking; mainBtn stays
+      // 'Pause' so the user can still pause the rest.
     } else {
       // Rest finished -> arm the next pomodoro but wait for the user to press Start.
+      stopInterval();
       isWork = true;
       timeLeft = workMinutes * 60;
       document.body.classList.remove('break-mode');
       sessionLabel.textContent = 'Work Session';
       playNotification();
       triggerFlash();
-      stopInterval();
       hasStarted = false;
       mainBtn.textContent = 'Start';
       timerFraction.classList.remove('visible');
