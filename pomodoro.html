@@ -68,6 +68,35 @@
     transition: box-shadow 0.6s ease;
   }
 
+  /* Length toggle */
+  .length-toggle {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    margin-bottom: 18px;
+    background: var(--surface);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 12px;
+  }
+  .length-btn {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 18px;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+  .length-btn.active {
+    background: var(--accent-work);
+    color: #0c1221;
+  }
+  body.break-mode .length-btn.active { background: var(--accent-break); }
+  .length-toggle.locked { opacity: 0.4; pointer-events: none; }
+
   /* Session label */
   .session-label {
     font-size: 13px;
@@ -241,6 +270,37 @@
     color: var(--text-muted);
   }
 
+  .stats-toggle {
+    margin: 18px auto 0;
+    display: block;
+    background: transparent;
+    border: none;
+    color: var(--accent-work);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    opacity: 0.85;
+    transition: opacity 0.2s ease, color 0.6s ease;
+  }
+  .stats-toggle:hover { opacity: 1; }
+  body.break-mode .stats-toggle { color: var(--accent-break); }
+  .stats-toggle .chevron { display: inline-block; transition: transform 0.25s ease; }
+  .stats-toggle.open .chevron { transform: rotate(180deg); }
+
+  .stats-panel {
+    display: none;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 14px 18px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  .stats-panel.open { display: flex; }
+  .stats-panel .stat-value { font-size: 18px; }
+
   /* Session complete flash */
   @keyframes flash {
     0% { opacity: 0; }
@@ -275,6 +335,10 @@
   <div class="flash-overlay" id="flash"></div>
 
   <div class="card">
+    <div class="length-toggle" id="lengthToggle">
+      <button class="length-btn" id="len25" data-min="25">25</button>
+      <button class="length-btn" id="len50" data-min="50">50</button>
+    </div>
     <div class="session-label" id="sessionLabel">Work Session</div>
 
     <div class="timer-ring">
@@ -303,20 +367,116 @@
 
     <div class="stats">
       <div class="stat">
+        <span class="stat-value" id="streakCount">0</span>
+        <span class="stat-label">Day Streak</span>
+      </div>
+      <div class="stat">
         <span class="stat-value" id="sessionCount">0</span>
         <span class="stat-label">Today</span>
       </div>
+    </div>
+
+    <button class="stats-toggle" id="statsToggle" aria-expanded="false" aria-controls="statsPanel">
+      View all stats <span class="chevron">▾</span>
+    </button>
+
+    <div class="stats-panel" id="statsPanel">
       <div class="stat">
-        <span class="stat-value" id="streakCount">0</span>
-        <span class="stat-label">Day Streak</span>
+        <span class="stat-value" id="weekCount">0</span>
+        <span class="stat-label">Week</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="monthCount">0</span>
+        <span class="stat-label">Month</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="threeMoCount">0</span>
+        <span class="stat-label">3 Months</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="yearCount">0</span>
+        <span class="stat-label">Year</span>
       </div>
     </div>
   </div>
 
 <script>
   // ── Config ──
-  const WORK_DURATION = 50 * 60;
-  const BREAK_DURATION = 10 * 60;
+  const REST_DURATION = 10 * 60;
+  const STORAGE_KEY = 'pomodoro_data';
+  let workMinutes = 25; // 25 or 50, restored from lengthPref on init
+
+  // ==PURE-LOGIC-START==
+  // DOM-free, deterministic helpers. `today` is always passed in (never new Date() here).
+  function localDateKey(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function mostRecentMonday(date) {
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const day = d.getDay(); // 0=Sun .. 6=Sat
+    const diff = (day === 0) ? 6 : day - 1; // days since Monday
+    d.setDate(d.getDate() - diff);
+    return d;
+  }
+
+  function computeStreak(history, today) {
+    const cursor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    // If today has no sessions yet, start counting from yesterday so an in-progress day doesn't break the streak.
+    if (!history[localDateKey(cursor)]) {
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    let streak = 0;
+    while (history[localDateKey(cursor)] > 0) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
+  }
+
+  function sumRange(history, fromKey, toKey) {
+    let total = 0;
+    for (const key in history) {
+      if (key >= fromKey && key <= toKey) total += history[key];
+    }
+    return total;
+  }
+
+  function computeTotals(history, today) {
+    const todayKey = localDateKey(today);
+    const weekStart = localDateKey(mostRecentMonday(today));
+    const monthStart = localDateKey(new Date(today.getFullYear(), today.getMonth(), 1));
+    const yearStart = localDateKey(new Date(today.getFullYear(), 0, 1));
+    const ninety = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    ninety.setDate(ninety.getDate() - 89); // inclusive 90-day window
+    const ninetyStart = localDateKey(ninety);
+    return {
+      today: history[todayKey] || 0,
+      week: sumRange(history, weekStart, todayKey),
+      month: sumRange(history, monthStart, todayKey),
+      threeMonths: sumRange(history, ninetyStart, todayKey),
+      year: sumRange(history, yearStart, todayKey),
+    };
+  }
+
+  function migrate(raw) {
+    if (raw && raw.version === 2) {
+      return {
+        version: 2,
+        history: raw.history || {},
+        lengthPref: raw.lengthPref === 50 ? 50 : 25,
+      };
+    }
+    const result = { version: 2, history: {}, lengthPref: 25 };
+    if (raw && typeof raw === 'object' && raw.date && raw.count > 0) {
+      result.history[raw.date] = raw.count;
+    }
+    return result;
+  }
+  // ==PURE-LOGIC-END==
 
   // ── DOM refs ──
   const timerDigits = document.getElementById('timerDigits');
@@ -328,6 +488,15 @@
   const mainBtn = document.getElementById('mainBtn');
   const resetBtn = document.getElementById('resetBtn');
   const flash = document.getElementById('flash');
+  const lengthToggle = document.getElementById('lengthToggle');
+  const len25Btn = document.getElementById('len25');
+  const len50Btn = document.getElementById('len50');
+  const statsToggle = document.getElementById('statsToggle');
+  const statsPanel = document.getElementById('statsPanel');
+  const weekCountEl = document.getElementById('weekCount');
+  const monthCountEl = document.getElementById('monthCount');
+  const threeMoCountEl = document.getElementById('threeMoCount');
+  const yearCountEl = document.getElementById('yearCount');
 
   // ── Progress ring setup ──
   const RADIUS = 100;
@@ -336,10 +505,11 @@
   progressRing.style.strokeDashoffset = CIRCUMFERENCE;
 
   // ── State ──
-  let timeLeft = WORK_DURATION;
+  let timeLeft = workMinutes * 60;
   let isWork = true;
   let running = false;
   let interval = null;
+  let hasStarted = false; // true once the current session has been started (until reset/re-arm)
 
   // ── Audio (generate a short beep using Web Audio API) ──
   function playNotification() {
@@ -367,41 +537,12 @@
     }
   }
 
-  // ── Storage ──
-  const STORAGE_KEY = 'pomodoro_data';
-
-  function todayKey() {
-    return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  }
-
-  function yesterdayKey() {
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
-  }
-
+  // ── Storage (history model) ──
   function loadData() {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    let data = raw ? JSON.parse(raw) : { date: todayKey(), count: 0, streak: 0, lastActiveDate: null };
-
-    const today = todayKey();
-
-    if (data.date !== today) {
-      // New day — check if streak continues
-      if (data.lastActiveDate === yesterdayKey() && data.count > 0) {
-        // Yesterday had sessions, streak continues (will increment when first session completes today)
-      } else if (data.lastActiveDate === yesterdayKey()) {
-        // Yesterday had no completed sessions — break streak
-        data.streak = 0;
-      } else if (data.lastActiveDate !== today) {
-        // Missed more than a day
-        data.streak = 0;
-      }
-      data.date = today;
-      data.count = 0;
-      saveData(data);
-    }
-
+    let raw = null;
+    try { raw = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (e) { raw = null; }
+    const data = migrate(raw);
+    saveData(data);
     return data;
   }
 
@@ -411,26 +552,23 @@
 
   function recordSession() {
     const data = loadData();
-    const wasFirstToday = data.count === 0;
-    data.count++;
-    data.lastActiveDate = todayKey();
-
-    if (wasFirstToday) {
-      // First session of the day — increment streak
-      if (data.streak === 0 && !data.lastActiveDate) {
-        data.streak = 1; // Very first session ever
-      } else {
-        data.streak++;
-      }
-    }
-
+    const key = localDateKey(new Date());
+    data.history[key] = (data.history[key] || 0) + 1;
     saveData(data);
-    updateStatsDisplay(data);
+    renderStats();
   }
 
-  function updateStatsDisplay(data) {
-    sessionCountEl.textContent = data.count;
-    streakCountEl.textContent = data.streak;
+  function renderStats() {
+    const data = loadData();
+    const now = new Date();
+    const totals = computeTotals(data.history, now);
+    const streak = computeStreak(data.history, now);
+    streakCountEl.textContent = streak;
+    sessionCountEl.textContent = totals.today;
+    weekCountEl.textContent = totals.week;
+    monthCountEl.textContent = totals.month;
+    threeMoCountEl.textContent = totals.threeMonths;
+    yearCountEl.textContent = totals.year;
   }
 
   // ── Timer display ──
@@ -443,12 +581,48 @@
   function updateDisplay() {
     timerDigits.textContent = formatTime(timeLeft);
 
-    const total = isWork ? WORK_DURATION : BREAK_DURATION;
+    const total = isWork ? workMinutes * 60 : REST_DURATION;
     const progress = (total - timeLeft) / total;
     progressRing.style.strokeDashoffset = CIRCUMFERENCE * (1 - progress);
 
     timerFraction.textContent = `of ${total / 60} min`;
   }
+
+  function updateLengthToggleUI() {
+    len25Btn.classList.toggle('active', workMinutes === 25);
+    len50Btn.classList.toggle('active', workMinutes === 50);
+    // Locked while a session is started/running; editable only when idle/armed.
+    const locked = hasStarted || running;
+    lengthToggle.classList.toggle('locked', locked);
+    // Also disable the buttons so keyboard users can't trigger them while locked
+    // (pointer-events:none only blocks mouse/touch).
+    len25Btn.disabled = locked;
+    len50Btn.disabled = locked;
+  }
+
+  function setLength(minutes) {
+    if (hasStarted || running) return; // only changeable when idle
+    workMinutes = minutes;
+    const data = loadData();
+    data.lengthPref = minutes;
+    saveData(data);
+    // When idle, isWork is always true (reset/init force it), so this re-arms the
+    // displayed work timer to the new length. The guard is harmless defense.
+    if (isWork) {
+      timeLeft = workMinutes * 60;
+      updateDisplay();
+    }
+    updateLengthToggleUI();
+  }
+
+  len25Btn.addEventListener('click', () => setLength(25));
+  len50Btn.addEventListener('click', () => setLength(50));
+
+  statsToggle.addEventListener('click', () => {
+    const open = statsPanel.classList.toggle('open');
+    statsToggle.classList.toggle('open', open);
+    statsToggle.setAttribute('aria-expanded', String(open));
+  });
 
   // ── Session switching ──
   function triggerFlash() {
@@ -458,16 +632,34 @@
   }
 
   function switchSession() {
-    if (isWork) recordSession();
-
-    isWork = !isWork;
-    timeLeft = isWork ? WORK_DURATION : BREAK_DURATION;
-    document.body.classList.toggle('break-mode', !isWork);
-    sessionLabel.textContent = isWork ? 'Work Session' : 'Break Time';
-
-    playNotification();
-    triggerFlash();
-    updateDisplay();
+    if (isWork) {
+      // Work finished -> record it and auto-start the 10-minute rest.
+      recordSession();
+      isWork = false;
+      timeLeft = REST_DURATION;
+      document.body.classList.add('break-mode');
+      sessionLabel.textContent = 'Break Time';
+      playNotification();
+      triggerFlash();
+      updateLengthToggleUI();
+      updateDisplay();
+      // running / hasStarted stay true so the rest keeps ticking; mainBtn stays
+      // 'Pause' so the user can still pause the rest.
+    } else {
+      // Rest finished -> arm the next pomodoro but wait for the user to press Start.
+      stopInterval();
+      isWork = true;
+      timeLeft = workMinutes * 60;
+      document.body.classList.remove('break-mode');
+      sessionLabel.textContent = 'Work Session';
+      playNotification();
+      triggerFlash();
+      hasStarted = false;
+      mainBtn.textContent = 'Start';
+      timerFraction.classList.remove('visible');
+      updateLengthToggleUI();
+      updateDisplay();
+    }
   }
 
   // ── Timer controls ──
@@ -480,29 +672,38 @@
     }
   }
 
-  function start() {
-    if (running) return;
-    running = true;
-    interval = setInterval(tick, 1000);
-    mainBtn.textContent = 'Pause';
-    timerFraction.classList.add('visible');
-  }
-
-  function pause() {
+  function stopInterval() {
     running = false;
     clearInterval(interval);
     interval = null;
+  }
+
+  function start() {
+    if (running) return;
+    running = true;
+    hasStarted = true;
+    interval = setInterval(tick, 1000);
+    mainBtn.textContent = 'Pause';
+    timerFraction.classList.add('visible');
+    updateLengthToggleUI();
+  }
+
+  function pause() {
+    stopInterval();
     mainBtn.textContent = 'Resume';
+    updateLengthToggleUI();
   }
 
   function reset() {
-    pause();
+    stopInterval();
     isWork = true;
-    timeLeft = WORK_DURATION;
+    hasStarted = false;
+    timeLeft = workMinutes * 60;
     document.body.classList.remove('break-mode');
     sessionLabel.textContent = 'Work Session';
     mainBtn.textContent = 'Start';
     timerFraction.classList.remove('visible');
+    updateLengthToggleUI();
     updateDisplay();
   }
 
@@ -514,8 +715,11 @@
   resetBtn.addEventListener('click', reset);
 
   // ── Init ──
-  const initialData = loadData();
-  updateStatsDisplay(initialData);
+  const bootData = loadData();
+  workMinutes = bootData.lengthPref;
+  timeLeft = workMinutes * 60;
+  updateLengthToggleUI();
+  renderStats();
   updateDisplay();
 </script>
 </body>
