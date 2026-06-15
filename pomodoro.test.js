@@ -4,9 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 function loadLogic() {
-  const html = fs.readFileSync(path.join(__dirname, 'pomodoro.html'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   const m = html.match(/\/\/ ==PURE-LOGIC-START==([\s\S]*?)\/\/ ==PURE-LOGIC-END==/);
-  if (!m) throw new Error('pure-logic markers not found in pomodoro.html');
+  if (!m) throw new Error('pure-logic markers not found in index.html');
   const names = ['localDateKey', 'mostRecentMonday', 'computeStreak', 'sumRange', 'computeTotals', 'migrate'];
   const factory = new Function(`${m[1]}\nreturn { ${names.join(', ')} };`);
   return factory();
