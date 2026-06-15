@@ -318,6 +318,36 @@
   const WORK_DURATION = 50 * 60;
   const BREAK_DURATION = 10 * 60;
 
+  // ==PURE-LOGIC-START==
+  // DOM-free, deterministic helpers. `today` is always passed in (never new Date() here).
+  function localDateKey(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function mostRecentMonday(date) {
+    throw new Error('not implemented');
+  }
+
+  function computeStreak(history, today) {
+    throw new Error('not implemented');
+  }
+
+  function sumRange(history, fromKey, toKey) {
+    throw new Error('not implemented');
+  }
+
+  function computeTotals(history, today) {
+    throw new Error('not implemented');
+  }
+
+  function migrate(raw) {
+    throw new Error('not implemented');
+  }
+  // ==PURE-LOGIC-END==
+
   // ── DOM refs ──
   const timerDigits = document.getElementById('timerDigits');
   const timerFraction = document.getElementById('timerFraction');
