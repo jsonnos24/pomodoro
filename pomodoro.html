@@ -315,8 +315,11 @@
 
 <script>
   // ── Config ──
-  const WORK_DURATION = 50 * 60;
-  const BREAK_DURATION = 10 * 60;
+  const REST_DURATION = 10 * 60;
+  const STORAGE_KEY = 'pomodoro_data';
+  let workMinutes = 25;
+  const WORK_DURATION = workMinutes * 60; // removed in a later task
+  const BREAK_DURATION = REST_DURATION;   // removed in a later task
 
   // ==PURE-LOGIC-START==
   // DOM-free, deterministic helpers. `today` is always passed in (never new Date() here).
@@ -439,41 +442,12 @@
     }
   }
 
-  // ── Storage ──
-  const STORAGE_KEY = 'pomodoro_data';
-
-  function todayKey() {
-    return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  }
-
-  function yesterdayKey() {
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
-  }
-
+  // ── Storage (history model) ──
   function loadData() {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    let data = raw ? JSON.parse(raw) : { date: todayKey(), count: 0, streak: 0, lastActiveDate: null };
-
-    const today = todayKey();
-
-    if (data.date !== today) {
-      // New day — check if streak continues
-      if (data.lastActiveDate === yesterdayKey() && data.count > 0) {
-        // Yesterday had sessions, streak continues (will increment when first session completes today)
-      } else if (data.lastActiveDate === yesterdayKey()) {
-        // Yesterday had no completed sessions — break streak
-        data.streak = 0;
-      } else if (data.lastActiveDate !== today) {
-        // Missed more than a day
-        data.streak = 0;
-      }
-      data.date = today;
-      data.count = 0;
-      saveData(data);
-    }
-
+    let raw = null;
+    try { raw = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (e) { raw = null; }
+    const data = migrate(raw);
+    saveData(data);
     return data;
   }
 
@@ -483,26 +457,26 @@
 
   function recordSession() {
     const data = loadData();
-    const wasFirstToday = data.count === 0;
-    data.count++;
-    data.lastActiveDate = todayKey();
-
-    if (wasFirstToday) {
-      // First session of the day — increment streak
-      if (data.streak === 0 && !data.lastActiveDate) {
-        data.streak = 1; // Very first session ever
-      } else {
-        data.streak++;
-      }
-    }
-
+    const key = localDateKey(new Date());
+    data.history[key] = (data.history[key] || 0) + 1;
     saveData(data);
-    updateStatsDisplay(data);
+    renderStats();
   }
 
-  function updateStatsDisplay(data) {
-    sessionCountEl.textContent = data.count;
-    streakCountEl.textContent = data.streak;
+  function renderStats() {
+    const data = loadData();
+    const now = new Date();
+    const totals = computeTotals(data.history, now);
+    const streak = computeStreak(data.history, now);
+    streakCountEl.textContent = streak;
+    sessionCountEl.textContent = totals.today;
+    // Week/month/3mo/year elements are wired in a later task.
+    if (typeof weekCountEl !== 'undefined' && weekCountEl) {
+      weekCountEl.textContent = totals.week;
+      monthCountEl.textContent = totals.month;
+      threeMoCountEl.textContent = totals.threeMonths;
+      yearCountEl.textContent = totals.year;
+    }
   }
 
   // ── Timer display ──
@@ -586,8 +560,8 @@
   resetBtn.addEventListener('click', reset);
 
   // ── Init ──
-  const initialData = loadData();
-  updateStatsDisplay(initialData);
+  loadData();
+  renderStats();
   updateDisplay();
 </script>
 </body>
