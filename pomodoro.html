@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pomodoro</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0c1221;
+    --card: rgba(22, 33, 56, 0.75);
+    --card-border: rgba(56, 189, 248, 0.08);
+    --surface: rgba(30, 44, 70, 0.6);
+    --surface-hover: rgba(40, 58, 90, 0.7);
+    --text: #e2e8f0;
+    --text-muted: #94a3b8;
+    --accent-work: #38bdf8;
+    --accent-break: #a78bfa;
+    --ring-track: rgba(51, 65, 85, 0.5);
+    --glow-work: rgba(56, 189, 248, 0.15);
+    --glow-break: rgba(167, 139, 250, 0.15);
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  /* Ambient background glow */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 50%; left: 50%;
+    width: 600px; height: 600px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: var(--glow-work);
+    filter: blur(120px);
+    transition: background 0.8s ease;
+    pointer-events: none;
+    z-index: 0;
+  }
+  body.break-mode::before { background: var(--glow-break); }
+
+  .card {
+    position: relative;
+    z-index: 1;
+    background: var(--card);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+    border: 1px solid var(--card-border);
+    border-radius: 28px;
+    padding: 44px 40px 36px;
+    width: 380px;
+    max-width: 92vw;
+    text-align: center;
+    box-shadow:
+      0 4px 24px rgba(0,0,0,0.25),
+      0 20px 60px rgba(0,0,0,0.2),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+    transition: box-shadow 0.6s ease;
+  }
+
+  /* Session label */
+  .session-label {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+    color: var(--accent-work);
+    margin-bottom: 32px;
+    transition: color 0.6s ease;
+  }
+  body.break-mode .session-label { color: var(--accent-break); }
+
+  /* Timer ring container */
+  .timer-ring {
+    position: relative;
+    width: 220px;
+    height: 220px;
+    margin: 0 auto 32px;
+  }
+
+  .timer-ring svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+
+  .timer-ring .track {
+    fill: none;
+    stroke: var(--ring-track);
+    stroke-width: 6;
+  }
+
+  .timer-ring .progress {
+    fill: none;
+    stroke: var(--accent-work);
+    stroke-width: 6;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1s linear, stroke 0.6s ease;
+    filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.3));
+  }
+  body.break-mode .timer-ring .progress {
+    stroke: var(--accent-break);
+    filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.3));
+  }
+
+  /* Timer digits overlay */
+  .timer-display {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .timer-digits {
+    font-size: 52px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: var(--text);
+  }
+
+  .timer-fraction {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  .timer-fraction.visible { opacity: 1; }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 28px;
+  }
+
+  .btn {
+    border: none;
+    border-radius: 14px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: inherit;
+    outline: none;
+  }
+
+  .btn-primary {
+    padding: 14px 36px;
+    background: var(--accent-work);
+    color: #0c1221;
+    box-shadow: 0 2px 12px rgba(56, 189, 248, 0.25);
+  }
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(56, 189, 248, 0.35);
+  }
+  .btn-primary:active { transform: translateY(0); }
+
+  body.break-mode .btn-primary {
+    background: var(--accent-break);
+    box-shadow: 0 2px 12px rgba(167, 139, 250, 0.25);
+  }
+  body.break-mode .btn-primary:hover {
+    box-shadow: 0 4px 20px rgba(167, 139, 250, 0.35);
+  }
+
+  .btn-secondary {
+    padding: 14px 20px;
+    background: var(--surface);
+    color: var(--text-muted);
+    border: 1px solid rgba(255,255,255,0.04);
+  }
+  .btn-secondary:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+
+  /* Task input */
+  .task-input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s ease, background 0.2s ease;
+    margin-bottom: 24px;
+  }
+  .task-input::placeholder { color: var(--text-muted); opacity: 0.6; }
+  .task-input:focus {
+    border-color: rgba(56, 189, 248, 0.2);
+    background: rgba(30, 44, 70, 0.8);
+  }
+
+  /* Stats row */
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .stat-label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  /* Session complete flash */
+  @keyframes flash {
+    0% { opacity: 0; }
+    30% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  .flash-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--glow-work);
+    pointer-events: none;
+    opacity: 0;
+    z-index: 10;
+  }
+  .flash-overlay.active {
+    animation: flash 0.8s ease-out forwards;
+  }
+  body.break-mode .flash-overlay { background: var(--glow-break); }
+
+  /* Responsive */
+  @media (max-width: 420px) {
+    .card { padding: 32px 24px 28px; border-radius: 22px; }
+    .timer-ring { width: 190px; height: 190px; }
+    .timer-digits { font-size: 44px; }
+    .btn-primary { padding: 12px 28px; }
+    .stats { gap: 24px; }
+  }
+</style>
+</head>
+<body>
+  <div class="flash-overlay" id="flash"></div>
+
+  <div class="card">
+    <div class="session-label" id="sessionLabel">Work Session</div>
+
+    <div class="timer-ring">
+      <svg viewBox="0 0 220 220">
+        <circle class="track" cx="110" cy="110" r="100"></circle>
+        <circle class="progress" id="progressRing" cx="110" cy="110" r="100"></circle>
+      </svg>
+      <div class="timer-display">
+        <div class="timer-digits" id="timerDigits">50:00</div>
+        <div class="timer-fraction" id="timerFraction">of 50 min</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn btn-secondary" id="resetBtn">Reset</button>
+      <button class="btn btn-primary" id="mainBtn">Start</button>
+    </div>
+
+    <input
+      class="task-input"
+      id="taskInput"
+      type="text"
+      placeholder="What are you focusing on?"
+      maxlength="80"
+    />
+
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-value" id="sessionCount">0</span>
+        <span class="stat-label">Today</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="streakCount">0</span>
+        <span class="stat-label">Day Streak</span>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // ── Config ──
+  const WORK_DURATION = 50 * 60;
+  const BREAK_DURATION = 10 * 60;
+
+  // ── DOM refs ──
+  const timerDigits = document.getElementById('timerDigits');
+  const timerFraction = document.getElementById('timerFraction');
+  const sessionLabel = document.getElementById('sessionLabel');
+  const sessionCountEl = document.getElementById('sessionCount');
+  const streakCountEl = document.getElementById('streakCount');
+  const progressRing = document.getElementById('progressRing');
+  const mainBtn = document.getElementById('mainBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const flash = document.getElementById('flash');
+
+  // ── Progress ring setup ──
+  const RADIUS = 100;
+  const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+  progressRing.style.strokeDasharray = CIRCUMFERENCE;
+  progressRing.style.strokeDashoffset = CIRCUMFERENCE;
+
+  // ── State ──
+  let timeLeft = WORK_DURATION;
+  let isWork = true;
+  let running = false;
+  let interval = null;
+
+  // ── Audio (generate a short beep using Web Audio API) ──
+  function playNotification() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const playTone = (freq, start, dur) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.15, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + dur);
+      };
+      const now = ctx.currentTime;
+      playTone(660, now, 0.15);
+      playTone(880, now + 0.18, 0.15);
+      playTone(660, now + 0.36, 0.2);
+    } catch (e) {
+      // Audio not available — fail silently
+    }
+  }
+
+  // ── Storage ──
+  const STORAGE_KEY = 'pomodoro_data';
+
+  function todayKey() {
+    return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  }
+
+  function yesterdayKey() {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function loadData() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    let data = raw ? JSON.parse(raw) : { date: todayKey(), count: 0, streak: 0, lastActiveDate: null };
+
+    const today = todayKey();
+
+    if (data.date !== today) {
+      // New day — check if streak continues
+      if (data.lastActiveDate === yesterdayKey() && data.count > 0) {
+        // Yesterday had sessions, streak continues (will increment when first session completes today)
+      } else if (data.lastActiveDate === yesterdayKey()) {
+        // Yesterday had no completed sessions — break streak
+        data.streak = 0;
+      } else if (data.lastActiveDate !== today) {
+        // Missed more than a day
+        data.streak = 0;
+      }
+      data.date = today;
+      data.count = 0;
+      saveData(data);
+    }
+
+    return data;
+  }
+
+  function saveData(data) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  }
+
+  function recordSession() {
+    const data = loadData();
+    const wasFirstToday = data.count === 0;
+    data.count++;
+    data.lastActiveDate = todayKey();
+
+    if (wasFirstToday) {
+      // First session of the day — increment streak
+      if (data.streak === 0 && !data.lastActiveDate) {
+        data.streak = 1; // Very first session ever
+      } else {
+        data.streak++;
+      }
+    }
+
+    saveData(data);
+    updateStatsDisplay(data);
+  }
+
+  function updateStatsDisplay(data) {
+    sessionCountEl.textContent = data.count;
+    streakCountEl.textContent = data.streak;
+  }
+
+  // ── Timer display ──
+  function formatTime(secs) {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  function updateDisplay() {
+    timerDigits.textContent = formatTime(timeLeft);
+
+    const total = isWork ? WORK_DURATION : BREAK_DURATION;
+    const progress = (total - timeLeft) / total;
+    progressRing.style.strokeDashoffset = CIRCUMFERENCE * (1 - progress);
+
+    timerFraction.textContent = `of ${total / 60} min`;
+  }
+
+  // ── Session switching ──
+  function triggerFlash() {
+    flash.classList.remove('active');
+    void flash.offsetWidth; // Force reflow
+    flash.classList.add('active');
+  }
+
+  function switchSession() {
+    if (isWork) recordSession();
+
+    isWork = !isWork;
+    timeLeft = isWork ? WORK_DURATION : BREAK_DURATION;
+    document.body.classList.toggle('break-mode', !isWork);
+    sessionLabel.textContent = isWork ? 'Work Session' : 'Break Time';
+
+    playNotification();
+    triggerFlash();
+    updateDisplay();
+  }
+
+  // ── Timer controls ──
+  function tick() {
+    if (timeLeft > 0) {
+      timeLeft--;
+      updateDisplay();
+    } else {
+      switchSession();
+    }
+  }
+
+  function start() {
+    if (running) return;
+    running = true;
+    interval = setInterval(tick, 1000);
+    mainBtn.textContent = 'Pause';
+    timerFraction.classList.add('visible');
+  }
+
+  function pause() {
+    running = false;
+    clearInterval(interval);
+    interval = null;
+    mainBtn.textContent = 'Resume';
+  }
+
+  function reset() {
+    pause();
+    isWork = true;
+    timeLeft = WORK_DURATION;
+    document.body.classList.remove('break-mode');
+    sessionLabel.textContent = 'Work Session';
+    mainBtn.textContent = 'Start';
+    timerFraction.classList.remove('visible');
+    updateDisplay();
+  }
+
+  // ── Event listeners ──
+  mainBtn.addEventListener('click', () => {
+    running ? pause() : start();
+  });
+
+  resetBtn.addEventListener('click', reset);
+
+  // ── Init ──
+  const initialData = loadData();
+  updateStatsDisplay(initialData);
+  updateDisplay();
+</script>
+</body>
+</html>
