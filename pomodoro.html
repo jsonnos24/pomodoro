@@ -336,7 +336,17 @@
   }
 
   function computeStreak(history, today) {
-    throw new Error('not implemented');
+    const cursor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    // If today has no sessions yet, start counting from yesterday so an in-progress day doesn't break the streak.
+    if (!history[localDateKey(cursor)]) {
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    let streak = 0;
+    while (history[localDateKey(cursor)] > 0) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
   }
 
   function sumRange(history, fromKey, toKey) {
