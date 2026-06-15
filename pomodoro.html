@@ -270,6 +270,36 @@
     color: var(--text-muted);
   }
 
+  .stats-toggle {
+    margin: 18px auto 0;
+    display: block;
+    background: transparent;
+    border: none;
+    color: var(--accent-work);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    opacity: 0.85;
+    transition: opacity 0.2s ease, color 0.6s ease;
+  }
+  .stats-toggle:hover { opacity: 1; }
+  body.break-mode .stats-toggle { color: var(--accent-break); }
+  .stats-toggle .chevron { display: inline-block; transition: transform 0.25s ease; }
+  .stats-toggle.open .chevron { transform: rotate(180deg); }
+
+  .stats-panel {
+    display: none;
+    justify-content: center;
+    gap: 24px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  .stats-panel.open { display: flex; }
+  .stats-panel .stat-value { font-size: 18px; }
+
   /* Session complete flash */
   @keyframes flash {
     0% { opacity: 0; }
@@ -336,12 +366,35 @@
 
     <div class="stats">
       <div class="stat">
+        <span class="stat-value" id="streakCount">0</span>
+        <span class="stat-label">Day Streak</span>
+      </div>
+      <div class="stat">
         <span class="stat-value" id="sessionCount">0</span>
         <span class="stat-label">Today</span>
       </div>
+    </div>
+
+    <button class="stats-toggle" id="statsToggle" aria-expanded="false">
+      View all stats <span class="chevron">▾</span>
+    </button>
+
+    <div class="stats-panel" id="statsPanel">
       <div class="stat">
-        <span class="stat-value" id="streakCount">0</span>
-        <span class="stat-label">Day Streak</span>
+        <span class="stat-value" id="weekCount">0</span>
+        <span class="stat-label">Week</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="monthCount">0</span>
+        <span class="stat-label">Month</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="threeMoCount">0</span>
+        <span class="stat-label">3 Months</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="yearCount">0</span>
+        <span class="stat-label">Year</span>
       </div>
     </div>
   </div>
@@ -437,6 +490,12 @@
   const lengthToggle = document.getElementById('lengthToggle');
   const len25Btn = document.getElementById('len25');
   const len50Btn = document.getElementById('len50');
+  const statsToggle = document.getElementById('statsToggle');
+  const statsPanel = document.getElementById('statsPanel');
+  const weekCountEl = document.getElementById('weekCount');
+  const monthCountEl = document.getElementById('monthCount');
+  const threeMoCountEl = document.getElementById('threeMoCount');
+  const yearCountEl = document.getElementById('yearCount');
 
   // ── Progress ring setup ──
   const RADIUS = 100;
@@ -505,13 +564,10 @@
     const streak = computeStreak(data.history, now);
     streakCountEl.textContent = streak;
     sessionCountEl.textContent = totals.today;
-    // Week/month/3mo/year elements are wired in a later task.
-    if (typeof weekCountEl !== 'undefined' && weekCountEl) {
-      weekCountEl.textContent = totals.week;
-      monthCountEl.textContent = totals.month;
-      threeMoCountEl.textContent = totals.threeMonths;
-      yearCountEl.textContent = totals.year;
-    }
+    weekCountEl.textContent = totals.week;
+    monthCountEl.textContent = totals.month;
+    threeMoCountEl.textContent = totals.threeMonths;
+    yearCountEl.textContent = totals.year;
   }
 
   // ── Timer display ──
@@ -560,6 +616,12 @@
 
   len25Btn.addEventListener('click', () => setLength(25));
   len50Btn.addEventListener('click', () => setLength(50));
+
+  statsToggle.addEventListener('click', () => {
+    const open = statsPanel.classList.toggle('open');
+    statsToggle.classList.toggle('open', open);
+    statsToggle.setAttribute('aria-expanded', String(open));
+  });
 
   // ── Session switching ──
   function triggerFlash() {
