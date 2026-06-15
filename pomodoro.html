@@ -328,7 +328,11 @@
   }
 
   function mostRecentMonday(date) {
-    throw new Error('not implemented');
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const day = d.getDay(); // 0=Sun .. 6=Sat
+    const diff = (day === 0) ? 6 : day - 1; // days since Monday
+    d.setDate(d.getDate() - diff);
+    return d;
   }
 
   function computeStreak(history, today) {

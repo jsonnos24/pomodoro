@@ -18,3 +18,12 @@ test('localDateKey formats local Y-M-D with zero padding', () => {
   assert.strictEqual(L.localDateKey(new Date(2026, 0, 5)), '2026-01-05');
   assert.strictEqual(L.localDateKey(new Date(2026, 11, 31)), '2026-12-31');
 });
+
+test('mostRecentMonday returns the Monday on or before the date', () => {
+  // 2026-06-15 is a Monday
+  assert.strictEqual(L.localDateKey(L.mostRecentMonday(new Date(2026, 5, 15))), '2026-06-15');
+  // 2026-06-14 is a Sunday -> previous Monday is 2026-06-08
+  assert.strictEqual(L.localDateKey(L.mostRecentMonday(new Date(2026, 5, 14))), '2026-06-08');
+  // 2026-06-17 is a Wednesday -> 2026-06-15
+  assert.strictEqual(L.localDateKey(L.mostRecentMonday(new Date(2026, 5, 17))), '2026-06-15');
+});
