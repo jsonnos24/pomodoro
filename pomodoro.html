@@ -292,7 +292,8 @@
   .stats-panel {
     display: none;
     justify-content: center;
-    gap: 24px;
+    flex-wrap: wrap;
+    gap: 14px 18px;
     margin-top: 16px;
     padding-top: 16px;
     border-top: 1px solid rgba(255,255,255,0.06);
@@ -375,7 +376,7 @@
       </div>
     </div>
 
-    <button class="stats-toggle" id="statsToggle" aria-expanded="false">
+    <button class="stats-toggle" id="statsToggle" aria-expanded="false" aria-controls="statsPanel">
       View all stats <span class="chevron">▾</span>
     </button>
 
