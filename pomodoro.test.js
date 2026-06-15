@@ -44,3 +44,27 @@ test('computeStreak is zero when neither today nor yesterday is active', () => {
   const today = new Date(2026, 5, 15);
   assert.strictEqual(L.computeStreak({ '2026-06-10': 5 }, today), 0);
 });
+
+test('sumRange sums counts inclusive of both bounds', () => {
+  const h = { '2026-06-10': 1, '2026-06-12': 2, '2026-06-15': 4, '2026-06-20': 8 };
+  assert.strictEqual(L.sumRange(h, '2026-06-12', '2026-06-15'), 6);
+  assert.strictEqual(L.sumRange(h, '2026-06-01', '2026-06-30'), 15);
+});
+
+test('computeTotals computes today/week/month/3mo/year windows', () => {
+  const today = new Date(2026, 5, 15); // Mon Jun 15 2026; 90-day window starts 2026-03-18
+  const h = {
+    '2026-06-15': 4, // today, week, month, 3mo, year
+    '2026-06-14': 2, // Sunday: last week (not this week), month, 3mo, year
+    '2026-06-01': 1, // month, 3mo, year
+    '2026-03-20': 5, // inside 90 days, year
+    '2026-03-10': 7, // outside 90 days, this year
+    '2025-12-31': 9, // last year
+  };
+  const t = L.computeTotals(h, today);
+  assert.strictEqual(t.today, 4);
+  assert.strictEqual(t.week, 4);          // week starts Mon Jun 15 -> only Jun 15
+  assert.strictEqual(t.month, 7);         // 4 + 2 + 1
+  assert.strictEqual(t.threeMonths, 12);  // 4 + 2 + 1 + 5
+  assert.strictEqual(t.year, 19);         // 4 + 2 + 1 + 5 + 7
+});

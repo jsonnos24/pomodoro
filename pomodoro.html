@@ -350,11 +350,28 @@
   }
 
   function sumRange(history, fromKey, toKey) {
-    throw new Error('not implemented');
+    let total = 0;
+    for (const key in history) {
+      if (key >= fromKey && key <= toKey) total += history[key];
+    }
+    return total;
   }
 
   function computeTotals(history, today) {
-    throw new Error('not implemented');
+    const todayKey = localDateKey(today);
+    const weekStart = localDateKey(mostRecentMonday(today));
+    const monthStart = localDateKey(new Date(today.getFullYear(), today.getMonth(), 1));
+    const yearStart = localDateKey(new Date(today.getFullYear(), 0, 1));
+    const ninety = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    ninety.setDate(ninety.getDate() - 89); // inclusive 90-day window
+    const ninetyStart = localDateKey(ninety);
+    return {
+      today: history[todayKey] || 0,
+      week: sumRange(history, weekStart, todayKey),
+      month: sumRange(history, monthStart, todayKey),
+      threeMonths: sumRange(history, ninetyStart, todayKey),
+      year: sumRange(history, yearStart, todayKey),
+    };
   }
 
   function migrate(raw) {
