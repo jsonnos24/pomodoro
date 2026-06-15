@@ -375,7 +375,18 @@
   }
 
   function migrate(raw) {
-    throw new Error('not implemented');
+    if (raw && raw.version === 2) {
+      return {
+        version: 2,
+        history: raw.history || {},
+        lengthPref: raw.lengthPref === 50 ? 50 : 25,
+      };
+    }
+    const result = { version: 2, history: {}, lengthPref: 25 };
+    if (raw && typeof raw === 'object' && raw.date && raw.count > 0) {
+      result.history[raw.date] = raw.count;
+    }
+    return result;
   }
   // ==PURE-LOGIC-END==
 

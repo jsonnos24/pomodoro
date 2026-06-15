@@ -68,3 +68,25 @@ test('computeTotals computes today/week/month/3mo/year windows', () => {
   assert.strictEqual(t.threeMonths, 12);  // 4 + 2 + 1 + 5
   assert.strictEqual(t.year, 19);         // 4 + 2 + 1 + 5 + 7
 });
+
+test('migrate passes through v2 data', () => {
+  const v2 = { version: 2, history: { '2026-06-15': 3 }, lengthPref: 50 };
+  assert.deepStrictEqual(L.migrate(v2), v2);
+});
+
+test('migrate converts old format, carrying today count into history', () => {
+  const old = { date: '2026-06-15', count: 4, streak: 9, lastActiveDate: '2026-06-15' };
+  const r = L.migrate(old);
+  assert.strictEqual(r.version, 2);
+  assert.strictEqual(r.lengthPref, 25);
+  assert.deepStrictEqual(r.history, { '2026-06-15': 4 });
+});
+
+test('migrate turns null into a fresh v2 default', () => {
+  assert.deepStrictEqual(L.migrate(null), { version: 2, history: {}, lengthPref: 25 });
+});
+
+test('migrate ignores old format with zero count', () => {
+  const r = L.migrate({ date: '2026-06-15', count: 0, streak: 0 });
+  assert.deepStrictEqual(r.history, {});
+});
