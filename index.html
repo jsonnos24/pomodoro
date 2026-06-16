@@ -17,9 +17,11 @@
     --text-muted: #94a3b8;
     --accent-work: #38bdf8;
     --accent-break: #a78bfa;
+    --accent-warmup: #f59e0b;
     --ring-track: rgba(51, 65, 85, 0.5);
     --glow-work: rgba(56, 189, 248, 0.15);
     --glow-break: rgba(167, 139, 250, 0.15);
+    --glow-warmup: rgba(245, 158, 11, 0.16);
   }
 
   body {
@@ -321,6 +323,69 @@
   }
   body.break-mode .flash-overlay { background: var(--glow-break); }
 
+  /* Warm-up ("pre-heat") mode — amber */
+  body.warmup-mode::before { background: var(--glow-warmup); }
+  body.warmup-mode .session-label { color: var(--accent-warmup); }
+  body.warmup-mode .timer-ring .progress {
+    stroke: var(--accent-warmup);
+    filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.35));
+  }
+  body.warmup-mode .btn-primary {
+    background: var(--accent-warmup);
+    box-shadow: 0 2px 12px rgba(245, 158, 11, 0.25);
+  }
+  body.warmup-mode .btn-primary:hover { box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35); }
+  body.warmup-mode .length-btn.active { background: var(--accent-warmup); }
+  body.warmup-mode .flash-overlay { background: var(--glow-warmup); }
+  body.warmup-mode .stats-toggle { color: var(--accent-warmup); }
+
+  /* Warm-up toggle (switch under the length picker) */
+  .warmup-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .warmup-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .warmup-switch {
+    flex: none;
+    width: 34px;
+    height: 18px;
+    border-radius: 10px;
+    background: var(--surface);
+    border: 1px solid rgba(255,255,255,0.08);
+    position: relative;
+    transition: background 0.2s ease;
+  }
+  .warmup-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.2s ease;
+  }
+  .warmup-toggle input:checked + .warmup-switch { background: var(--accent-warmup); }
+  .warmup-toggle input:checked + .warmup-switch::after { transform: translateX(16px); }
+  .warmup-toggle input:focus-visible + .warmup-switch { outline: 2px solid var(--accent-warmup); outline-offset: 2px; }
+  .warmup-toggle.locked { opacity: 0.4; pointer-events: none; }
+  .warmup-hint {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-bottom: 22px;
+    max-width: 240px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
   /* Mute toggle (top-right corner) */
   .mute-btn {
     position: absolute;
@@ -379,6 +444,14 @@
       <button class="length-btn" id="len25" data-min="25">25</button>
       <button class="length-btn" id="len50" data-min="50">50</button>
     </div>
+
+    <label class="warmup-toggle" id="warmupToggle">
+      <input type="checkbox" id="warmupCheck">
+      <span class="warmup-switch" aria-hidden="true"></span>
+      <span class="warmup-text">🔥 Just pre-heat the oven · 5 min</span>
+    </label>
+    <p class="warmup-hint">Set up your workspace for 5 min — then your session begins.</p>
+
     <div class="session-label" id="sessionLabel">Work Session</div>
 
     <div class="timer-ring">
@@ -452,6 +525,7 @@
 <script>
   // ── Config ──
   const REST_DURATION = 10 * 60;
+  const WARMUP_DURATION = 5 * 60;
   const STORAGE_KEY = 'pomodoro_data';
   let workMinutes = 25; // 25 or 50, restored from lengthPref on init
 
@@ -574,6 +648,8 @@
   const lengthToggle = document.getElementById('lengthToggle');
   const len25Btn = document.getElementById('len25');
   const len50Btn = document.getElementById('len50');
+  const warmupToggle = document.getElementById('warmupToggle');
+  const warmupCheck = document.getElementById('warmupCheck');
   const statsToggle = document.getElementById('statsToggle');
   const statsPanel = document.getElementById('statsPanel');
   const weekCountEl = document.getElementById('weekCount');
@@ -591,12 +667,13 @@
 
   // ── State ──
   let timeLeft = workMinutes * 60;
-  let isWork = true;
+  let phase = 'work'; // 'warmup' | 'work' | 'break'
   let running = false;
   let interval = null;
   let hasStarted = false; // true once the current session has been started (until reset/re-arm)
   let soundName = 'chime'; // chime | bell | arcade, restored on init
   let muted = false;       // restored on init
+  let preheat = false;     // 5-min "pre-heat the oven" warm-up enabled; restored on init
 
   // ── Audio (synthesized via Web Audio API; one shared, lazily-created context) ──
   let audioCtx = null;
@@ -693,10 +770,32 @@
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
+  // ── Phase helpers (warmup | work | break) ──
+  function phaseDuration(p) {
+    if (p === 'warmup') return WARMUP_DURATION;
+    if (p === 'break') return REST_DURATION;
+    return workMinutes * 60;
+  }
+  function phaseLabel(p) {
+    if (p === 'warmup') return 'Pre-Heating';
+    if (p === 'break') return 'Break Time';
+    return 'Work Session';
+  }
+  function phaseTitleWord(p) {
+    if (p === 'warmup') return 'Pre-heating';
+    if (p === 'break') return 'Break';
+    return 'Focus';
+  }
+  function applyPhaseMode() {
+    document.body.classList.toggle('warmup-mode', phase === 'warmup');
+    document.body.classList.toggle('break-mode', phase === 'break');
+    sessionLabel.textContent = phaseLabel(phase);
+  }
+
   function updateDisplay() {
     timerDigits.textContent = formatTime(timeLeft);
 
-    const total = isWork ? workMinutes * 60 : REST_DURATION;
+    const total = phaseDuration(phase);
     const progress = (total - timeLeft) / total;
     progressRing.style.strokeDashoffset = CIRCUMFERENCE * (1 - progress);
 
@@ -707,9 +806,8 @@
   // Reflect the countdown in the browser tab title while a session is active.
   function updateTitle() {
     if (!hasStarted) { document.title = 'Pomodoro'; return; }
-    const label = isWork ? 'Focus' : 'Break';
     const prefix = running ? '' : '⏸ '; // pause marker when stopped mid-session
-    document.title = `${prefix}${formatTime(timeLeft)} · ${label}`;
+    document.title = `${prefix}${formatTime(timeLeft)} · ${phaseTitleWord(phase)}`;
   }
 
   function updateLengthToggleUI() {
@@ -722,6 +820,8 @@
     // (pointer-events:none only blocks mouse/touch).
     len25Btn.disabled = locked;
     len50Btn.disabled = locked;
+    warmupToggle.classList.toggle('locked', locked);
+    warmupCheck.disabled = locked;
   }
 
   function setLength(minutes) {
@@ -730,9 +830,9 @@
     const data = loadData();
     data.lengthPref = minutes;
     saveData(data);
-    // When idle, isWork is always true (reset/init force it), so this re-arms the
-    // displayed work timer to the new length. The guard is harmless defense.
-    if (isWork) {
+    // When idle the phase is always 'work', so this re-arms the displayed work timer
+    // to the new length. The guard is harmless defense.
+    if (phase === 'work') {
       timeLeft = workMinutes * 60;
       updateDisplay();
     }
@@ -741,6 +841,14 @@
 
   len25Btn.addEventListener('click', () => setLength(25));
   len50Btn.addEventListener('click', () => setLength(50));
+
+  warmupCheck.addEventListener('change', () => {
+    if (hasStarted || running) { warmupCheck.checked = preheat; return; } // locked mid-session
+    preheat = warmupCheck.checked;
+    const data = loadData();
+    data.preheat = preheat;
+    saveData(data);
+  });
 
   statsToggle.addEventListener('click', () => {
     const open = statsPanel.classList.toggle('open');
@@ -775,27 +883,33 @@
     flash.classList.add('active');
   }
 
-  function switchSession() {
-    if (isWork) {
-      // Work finished -> record it and auto-start the 10-minute rest.
-      recordSession();
-      isWork = false;
-      timeLeft = REST_DURATION;
-      document.body.classList.add('break-mode');
-      sessionLabel.textContent = 'Break Time';
+  function advancePhase() {
+    if (phase === 'warmup') {
+      // Warm-up done -> roll straight into the focus session, still running.
+      phase = 'work';
+      timeLeft = workMinutes * 60;
+      applyPhaseMode();
       playEndSound();
       triggerFlash();
       updateLengthToggleUI();
       updateDisplay();
-      // running / hasStarted stay true so the rest keeps ticking; mainBtn stays
-      // 'Pause' so the user can still pause the rest.
+    } else if (phase === 'work') {
+      // Work done -> record it and auto-start the 10-minute rest, still running.
+      recordSession();
+      phase = 'break';
+      timeLeft = REST_DURATION;
+      applyPhaseMode();
+      playEndSound();
+      triggerFlash();
+      updateLengthToggleUI();
+      updateDisplay();
+      // mainBtn stays 'Pause' so the user can still pause the rest.
     } else {
-      // Rest finished -> arm the next pomodoro but wait for the user to press Start.
+      // Rest done -> arm the next pomodoro but wait for the user to press Start.
       stopInterval();
-      isWork = true;
+      phase = 'work';
       timeLeft = workMinutes * 60;
-      document.body.classList.remove('break-mode');
-      sessionLabel.textContent = 'Work Session';
+      applyPhaseMode();
       playEndSound();
       triggerFlash();
       hasStarted = false;
@@ -812,7 +926,7 @@
       timeLeft--;
       updateDisplay();
     } else {
-      switchSession();
+      advancePhase();
     }
   }
 
@@ -825,13 +939,19 @@
   function start() {
     if (running) return;
     getAudioCtx(); // unlock/resume audio within this click gesture
+    // Fresh/armed start with warm-up enabled -> begin with the 5-min pre-heat phase.
+    if (!hasStarted && phase === 'work' && preheat) {
+      phase = 'warmup';
+      timeLeft = WARMUP_DURATION;
+      applyPhaseMode();
+    }
     running = true;
     hasStarted = true;
     interval = setInterval(tick, 1000);
     mainBtn.textContent = 'Pause';
     timerFraction.classList.add('visible');
     updateLengthToggleUI();
-    updateTitle();
+    updateDisplay();
   }
 
   function pause() {
@@ -843,11 +963,10 @@
 
   function reset() {
     stopInterval();
-    isWork = true;
+    phase = 'work';
     hasStarted = false;
     timeLeft = workMinutes * 60;
-    document.body.classList.remove('break-mode');
-    sessionLabel.textContent = 'Work Session';
+    applyPhaseMode();
     mainBtn.textContent = 'Start';
     timerFraction.classList.remove('visible');
     updateLengthToggleUI();
@@ -866,7 +985,9 @@
   workMinutes = bootData.lengthPref;
   soundName = bootData.sound;
   muted = bootData.muted;
+  preheat = bootData.preheat;
   soundSelect.value = soundName;
+  warmupCheck.checked = preheat;
   updateMuteUI();
   timeLeft = workMinutes * 60;
   updateLengthToggleUI();
