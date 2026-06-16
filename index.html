@@ -321,6 +321,45 @@
   }
   body.break-mode .flash-overlay { background: var(--glow-break); }
 
+  /* Mute toggle (top-right corner) */
+  .mute-btn {
+    position: absolute;
+    top: 16px;
+    right: 18px;
+    background: transparent;
+    border: none;
+    font-size: 18px;
+    line-height: 1;
+    padding: 4px;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+  }
+  .mute-btn:hover { opacity: 1; }
+
+  /* Sound picker */
+  .sound-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 14px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+  }
+  .sound-select {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 5px 8px;
+    cursor: pointer;
+    outline: none;
+  }
+
   /* Responsive */
   @media (max-width: 420px) {
     .card { padding: 32px 24px 28px; border-radius: 22px; }
@@ -335,6 +374,7 @@
   <div class="flash-overlay" id="flash"></div>
 
   <div class="card">
+    <button class="mute-btn" id="muteBtn" type="button" aria-label="Toggle sound" title="Sound on / off">🔊</button>
     <div class="length-toggle" id="lengthToggle">
       <button class="length-btn" id="len25" data-min="25">25</button>
       <button class="length-btn" id="len50" data-min="50">50</button>
@@ -397,6 +437,15 @@
         <span class="stat-value" id="yearCount">0</span>
         <span class="stat-label">Year</span>
       </div>
+    </div>
+
+    <div class="sound-row">
+      <span>Sound</span>
+      <select class="sound-select" id="soundSelect" aria-label="End-of-session sound">
+        <option value="chime">Chime</option>
+        <option value="bell">Bell</option>
+        <option value="arcade">Arcade</option>
+      </select>
     </div>
   </div>
 
@@ -531,6 +580,8 @@
   const monthCountEl = document.getElementById('monthCount');
   const threeMoCountEl = document.getElementById('threeMoCount');
   const yearCountEl = document.getElementById('yearCount');
+  const muteBtn = document.getElementById('muteBtn');
+  const soundSelect = document.getElementById('soundSelect');
 
   // ── Progress ring setup ──
   const RADIUS = 100;
@@ -544,31 +595,51 @@
   let running = false;
   let interval = null;
   let hasStarted = false; // true once the current session has been started (until reset/re-arm)
+  let soundName = 'chime'; // chime | bell | arcade, restored on init
+  let muted = false;       // restored on init
 
-  // ── Audio (generate a short beep using Web Audio API) ──
-  function playNotification() {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const playTone = (freq, start, dur) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0, start);
-        gain.gain.linearRampToValueAtTime(0.15, start + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(start);
-        osc.stop(start + dur);
-      };
-      const now = ctx.currentTime;
-      playTone(660, now, 0.15);
-      playTone(880, now + 0.18, 0.15);
-      playTone(660, now + 0.36, 0.2);
-    } catch (e) {
-      // Audio not available — fail silently
+  // ── Audio (synthesized via Web Audio API; one shared, lazily-created context) ──
+  let audioCtx = null;
+  function getAudioCtx() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { audioCtx = null; }
     }
+    // Resume must happen inside a user gesture; callers invoke this from clicks.
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  function playTone(ctx, freq, start, dur, type) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.15, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + dur);
+  }
+
+  const SOUNDS = {
+    chime(ctx, t) { playTone(ctx, 660, t, 0.15); playTone(ctx, 880, t + 0.18, 0.15); playTone(ctx, 660, t + 0.36, 0.2); },
+    bell(ctx, t) { playTone(ctx, 880, t, 1.1); playTone(ctx, 1320, t, 0.9); }, // fundamental + fifth, long decay
+    arcade(ctx, t) { [392, 523, 659, 784].forEach((f, i) => playTone(ctx, f, t + i * 0.08, 0.09, 'square')); },
+  };
+
+  // Play a sound by name regardless of mute (used for the picker preview).
+  function playSound(name) {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    try { (SOUNDS[name] || SOUNDS.chime)(ctx, ctx.currentTime); } catch (e) { /* ignore */ }
+  }
+
+  // End-of-session sound respects the mute toggle.
+  function playEndSound() {
+    if (!muted) playSound(soundName);
   }
 
   // ── Storage (history model) ──
@@ -677,6 +748,26 @@
     statsToggle.setAttribute('aria-expanded', String(open));
   });
 
+  function updateMuteUI() {
+    muteBtn.textContent = muted ? '🔇' : '🔊';
+  }
+
+  muteBtn.addEventListener('click', () => {
+    muted = !muted;
+    const data = loadData();
+    data.muted = muted;
+    saveData(data);
+    updateMuteUI();
+  });
+
+  soundSelect.addEventListener('change', () => {
+    soundName = soundSelect.value;
+    const data = loadData();
+    data.sound = soundName;
+    saveData(data);
+    playSound(soundName); // preview, even when muted (explicit "let me hear it" action)
+  });
+
   // ── Session switching ──
   function triggerFlash() {
     flash.classList.remove('active');
@@ -692,7 +783,7 @@
       timeLeft = REST_DURATION;
       document.body.classList.add('break-mode');
       sessionLabel.textContent = 'Break Time';
-      playNotification();
+      playEndSound();
       triggerFlash();
       updateLengthToggleUI();
       updateDisplay();
@@ -705,7 +796,7 @@
       timeLeft = workMinutes * 60;
       document.body.classList.remove('break-mode');
       sessionLabel.textContent = 'Work Session';
-      playNotification();
+      playEndSound();
       triggerFlash();
       hasStarted = false;
       mainBtn.textContent = 'Start';
@@ -733,6 +824,7 @@
 
   function start() {
     if (running) return;
+    getAudioCtx(); // unlock/resume audio within this click gesture
     running = true;
     hasStarted = true;
     interval = setInterval(tick, 1000);
@@ -772,6 +864,10 @@
   // ── Init ──
   const bootData = loadData();
   workMinutes = bootData.lengthPref;
+  soundName = bootData.sound;
+  muted = bootData.muted;
+  soundSelect.value = soundName;
+  updateMuteUI();
   timeLeft = workMinutes * 60;
   updateLengthToggleUI();
   renderStats();
