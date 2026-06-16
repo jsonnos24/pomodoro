@@ -452,41 +452,36 @@
   .hist-more:hover { opacity: 1; }
   body.break-mode .hist-more { color: var(--accent-break); }
 
-  /* Mute toggle (top-right corner) */
-  .mute-btn {
+  /* Audio controls (mute speaker + sound picker stacked, top-right corner) */
+  .audio-controls {
     position: absolute;
-    top: 16px;
-    right: 18px;
+    top: 14px;
+    right: 16px;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+  .mute-btn {
     background: transparent;
     border: none;
     font-size: 18px;
     line-height: 1;
-    padding: 4px;
+    padding: 2px;
     cursor: pointer;
     opacity: 0.7;
     transition: opacity 0.2s ease;
   }
   .mute-btn:hover { opacity: 1; }
-
-  /* Sound picker */
-  .sound-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    margin-top: 14px;
-    font-size: 11px;
-    letter-spacing: 0.5px;
-    color: var(--text-muted);
-  }
   .sound-select {
     background: var(--surface);
     color: var(--text);
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 8px;
     font-family: inherit;
-    font-size: 12px;
-    padding: 5px 8px;
+    font-size: 11px;
+    padding: 4px 6px;
     cursor: pointer;
     outline: none;
   }
@@ -505,7 +500,14 @@
   <div class="flash-overlay" id="flash"></div>
 
   <div class="card">
-    <button class="mute-btn" id="muteBtn" type="button" aria-label="Toggle sound" title="Sound on / off">🔊</button>
+    <div class="audio-controls">
+      <button class="mute-btn" id="muteBtn" type="button" aria-label="Toggle sound" title="Sound on / off">🔊</button>
+      <select class="sound-select" id="soundSelect" aria-label="End-of-session sound" title="End-of-session sound">
+        <option value="chime">Chime</option>
+        <option value="bell">Bell</option>
+        <option value="arcade">Arcade</option>
+      </select>
+    </div>
     <div class="length-toggle" id="lengthToggle">
       <button class="length-btn" id="len25" data-min="25">25</button>
       <button class="length-btn" id="len50" data-min="50">50</button>
@@ -587,14 +589,6 @@
       <button class="hist-more" id="historyMore" type="button" style="display:none"></button>
     </div>
 
-    <div class="sound-row">
-      <span>Sound</span>
-      <select class="sound-select" id="soundSelect" aria-label="End-of-session sound">
-        <option value="chime">Chime</option>
-        <option value="bell">Bell</option>
-        <option value="arcade">Arcade</option>
-      </select>
-    </div>
   </div>
 
 <script>
