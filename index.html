@@ -792,9 +792,38 @@
     try { (SOUNDS[name] || SOUNDS.chime)(ctx, ctx.currentTime); } catch (e) { /* ignore */ }
   }
 
-  // End-of-session sound respects the mute toggle.
+  // Single end-of-session sound, respects the mute toggle (used for the gentle warm-up roll-over).
   function playEndSound() {
     if (!muted) playSound(soundName);
+  }
+
+  // Vibrate on mobile where supported. Independent of mute — it's the silent nudge.
+  function vibrate(pattern) {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try { navigator.vibrate(pattern || [200, 100, 200]); } catch (e) { /* ignore */ }
+    }
+  }
+
+  // Attention alert for real session boundaries: sound (if unmuted) + vibrate, repeating
+  // every few seconds while the tab is hidden, until the user returns (with a safety cap).
+  let alertRepeatTimer = null;
+  let alertRepeatCap = null;
+  function fireAlertOnce() {
+    if (!muted) playSound(soundName);
+    vibrate();
+  }
+  function playEndAlert() {
+    fireAlertOnce();
+    if (document.hidden) startAlertRepeat();
+  }
+  function startAlertRepeat() {
+    stopAlertRepeat();
+    alertRepeatTimer = setInterval(fireAlertOnce, 4000);  // gentle spacing, not a blare
+    alertRepeatCap = setTimeout(stopAlertRepeat, 90000);  // give up after ~90s if never seen
+  }
+  function stopAlertRepeat() {
+    if (alertRepeatTimer) { clearInterval(alertRepeatTimer); alertRepeatTimer = null; }
+    if (alertRepeatCap) { clearTimeout(alertRepeatCap); alertRepeatCap = null; }
   }
 
   // ── Storage (history model) ──
@@ -1010,8 +1039,10 @@
     if (flashTimer) { clearInterval(flashTimer); flashTimer = null; }
     if (titleFlashing) { titleFlashing = false; updateTitle(); }
   }
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) stopTitleFlash(); });
-  window.addEventListener('focus', stopTitleFlash);
+  // When the user returns to the tab, stop both the title flash and the repeating sound.
+  function stopAlerts() { stopTitleFlash(); stopAlertRepeat(); }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) stopAlerts(); });
+  window.addEventListener('focus', stopAlerts);
 
   function updateLengthToggleUI() {
     len25Btn.classList.toggle('active', workMinutes === 25);
@@ -1103,7 +1134,7 @@
       phase = 'break';
       timeLeft = REST_DURATION;
       applyPhaseMode();
-      playEndSound();
+      playEndAlert();
       triggerFlash();
       startTitleFlash('🍅 Break time!');
       updateLengthToggleUI();
@@ -1115,7 +1146,7 @@
       phase = 'work';
       timeLeft = workMinutes * 60;
       applyPhaseMode();
-      playEndSound();
+      playEndAlert();
       triggerFlash();
       startTitleFlash('✅ Back to work!');
       hasStarted = false;
@@ -1163,6 +1194,7 @@
   }
 
   function reset() {
+    stopAlerts(); // user is clearly here — silence any repeating alert
     stopInterval();
     phase = 'work';
     hasStarted = false;
@@ -1173,6 +1205,7 @@
   }
 
   function toggleTimer() {
+    stopAlerts(); // a tap means the user is here — silence any repeating alert
     running ? pause() : start();
   }
 
