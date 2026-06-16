@@ -29,11 +29,14 @@
     background: var(--bg);
     color: var(--text);
     display: flex;
-    align-items: center;
-    justify-content: center;
     min-height: 100dvh;
-    overflow: hidden;
+    overflow-y: auto;
+    padding: 20px 16px;
   }
+  /* margin:auto centers the card when it fits but still allows scrolling
+     from the top when it's taller than the viewport (avoids the flexbox
+     centering clip bug on small screens). */
+  .card { margin: auto; }
 
   /* Ambient background glow */
   body::before {
@@ -116,8 +119,17 @@
     position: relative;
     width: 220px;
     height: 220px;
-    margin: 0 auto 32px;
+    margin: 0 auto 24px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
+  .timer-ring:focus-visible {
+    outline: 2px solid var(--accent-work);
+    outline-offset: 6px;
+    border-radius: 50%;
+  }
+  body.break-mode .timer-ring:focus-visible { outline-color: var(--accent-break); }
+  body.warmup-mode .timer-ring:focus-visible { outline-color: var(--accent-warmup); }
 
   .timer-ring svg {
     width: 100%;
@@ -165,21 +177,26 @@
     color: var(--text);
   }
 
-  .timer-fraction {
-    font-size: 13px;
-    font-weight: 500;
+  .timer-cue {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
     color: var(--text-muted);
-    opacity: 0;
-    transition: opacity 0.3s ease;
+    margin-top: 6px;
   }
-  .timer-fraction.visible { opacity: 1; }
 
   /* Controls */
-  .controls {
+  .reset-btn {
+    display: block;
+    margin: 0 auto 24px;
+  }
+  .audio-row {
     display: flex;
-    gap: 12px;
+    align-items: center;
     justify-content: center;
-    margin-bottom: 28px;
+    gap: 10px;
+    margin-bottom: 16px;
   }
 
   .btn {
@@ -452,17 +469,7 @@
   .hist-more:hover { opacity: 1; }
   body.break-mode .hist-more { color: var(--accent-break); }
 
-  /* Audio controls (mute speaker + sound picker stacked, top-right corner) */
-  .audio-controls {
-    position: absolute;
-    top: 14px;
-    right: 16px;
-    z-index: 2;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 6px;
-  }
+  /* Audio controls (mute speaker + sound picker, centered above Reset) */
   .mute-btn {
     background: transparent;
     border: none;
@@ -500,14 +507,6 @@
   <div class="flash-overlay" id="flash"></div>
 
   <div class="card">
-    <div class="audio-controls">
-      <button class="mute-btn" id="muteBtn" type="button" aria-label="Toggle sound" title="Sound on / off">🔊</button>
-      <select class="sound-select" id="soundSelect" aria-label="End-of-session sound" title="End-of-session sound">
-        <option value="chime">Chime</option>
-        <option value="bell">Bell</option>
-        <option value="arcade">Arcade</option>
-      </select>
-    </div>
     <div class="length-toggle" id="lengthToggle">
       <button class="length-btn" id="len25" data-min="25">25</button>
       <button class="length-btn" id="len50" data-min="50">50</button>
@@ -522,21 +521,27 @@
 
     <div class="session-label" id="sessionLabel">Work Session</div>
 
-    <div class="timer-ring">
+    <div class="timer-ring" id="timerRing" role="button" tabindex="0" aria-label="Start or pause the timer">
       <svg viewBox="0 0 220 220">
         <circle class="track" cx="110" cy="110" r="100"></circle>
         <circle class="progress" id="progressRing" cx="110" cy="110" r="100"></circle>
       </svg>
       <div class="timer-display">
-        <div class="timer-digits" id="timerDigits">50:00</div>
-        <div class="timer-fraction" id="timerFraction">of 50 min</div>
+        <div class="timer-digits" id="timerDigits">25:00</div>
+        <div class="timer-cue" id="timerCue">Tap to start</div>
       </div>
     </div>
 
-    <div class="controls">
-      <button class="btn btn-secondary" id="resetBtn">Reset</button>
-      <button class="btn btn-primary" id="mainBtn">Start</button>
+    <div class="audio-row">
+      <button class="mute-btn" id="muteBtn" type="button" aria-label="Toggle sound" title="Sound on / off">🔊</button>
+      <select class="sound-select" id="soundSelect" aria-label="End-of-session sound" title="End-of-session sound">
+        <option value="chime">Chime</option>
+        <option value="bell">Bell</option>
+        <option value="arcade">Arcade</option>
+      </select>
     </div>
+
+    <button class="btn btn-secondary reset-btn" id="resetBtn">Reset</button>
 
     <input
       class="task-input"
@@ -705,12 +710,12 @@
 
   // ── DOM refs ──
   const timerDigits = document.getElementById('timerDigits');
-  const timerFraction = document.getElementById('timerFraction');
+  const timerCue = document.getElementById('timerCue');
+  const timerRing = document.getElementById('timerRing');
   const sessionLabel = document.getElementById('sessionLabel');
   const sessionCountEl = document.getElementById('sessionCount');
   const streakCountEl = document.getElementById('streakCount');
   const progressRing = document.getElementById('progressRing');
-  const mainBtn = document.getElementById('mainBtn');
   const resetBtn = document.getElementById('resetBtn');
   const flash = document.getElementById('flash');
   const taskInput = document.getElementById('taskInput');
@@ -966,8 +971,15 @@
     const progress = (total - timeLeft) / total;
     progressRing.style.strokeDashoffset = CIRCUMFERENCE * (1 - progress);
 
-    timerFraction.textContent = `of ${total / 60} min`;
+    updateCue();
     updateTitle();
+  }
+
+  // The ring is the start/pause control; this line tells the user what a tap does.
+  function updateCue() {
+    if (!hasStarted) timerCue.textContent = 'Tap to start';
+    else if (running) timerCue.textContent = 'Tap to pause';
+    else timerCue.textContent = 'Tap to resume';
   }
 
   // Reflect the countdown in the browser tab title while a session is active.
@@ -1096,7 +1108,7 @@
       startTitleFlash('🍅 Break time!');
       updateLengthToggleUI();
       updateDisplay();
-      // mainBtn stays 'Pause' so the user can still pause the rest.
+      // still running, so the ring shows "Tap to pause" — the user can pause the rest.
     } else {
       // Rest done -> arm the next pomodoro but wait for the user to press Start.
       stopInterval();
@@ -1107,8 +1119,6 @@
       triggerFlash();
       startTitleFlash('✅ Back to work!');
       hasStarted = false;
-      mainBtn.textContent = 'Start';
-      timerFraction.classList.remove('visible');
       updateLengthToggleUI();
       updateDisplay();
     }
@@ -1142,17 +1152,14 @@
     running = true;
     hasStarted = true;
     interval = setInterval(tick, 1000);
-    mainBtn.textContent = 'Pause';
-    timerFraction.classList.add('visible');
     updateLengthToggleUI();
     updateDisplay();
   }
 
   function pause() {
     stopInterval();
-    mainBtn.textContent = 'Resume';
     updateLengthToggleUI();
-    updateTitle();
+    updateDisplay();
   }
 
   function reset() {
@@ -1161,15 +1168,19 @@
     hasStarted = false;
     timeLeft = workMinutes * 60;
     applyPhaseMode();
-    mainBtn.textContent = 'Start';
-    timerFraction.classList.remove('visible');
     updateLengthToggleUI();
     updateDisplay();
   }
 
-  // ── Event listeners ──
-  mainBtn.addEventListener('click', () => {
+  function toggleTimer() {
     running ? pause() : start();
+  }
+
+  // ── Event listeners ──
+  // The ring is the primary start/pause control.
+  timerRing.addEventListener('click', toggleTimer);
+  timerRing.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTimer(); }
   });
 
   resetBtn.addEventListener('click', reset);
