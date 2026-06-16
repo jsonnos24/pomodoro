@@ -805,10 +805,34 @@
 
   // Reflect the countdown in the browser tab title while a session is active.
   function updateTitle() {
+    if (titleFlashing) return; // the flash owns the title until the tab regains focus
     if (!hasStarted) { document.title = 'Pomodoro'; return; }
     const prefix = running ? '' : '⏸ '; // pause marker when stopped mid-session
     document.title = `${prefix}${formatTime(timeLeft)} · ${phaseTitleWord(phase)}`;
   }
+
+  // ── End-of-session tab-title flash (only when the tab is in the background) ──
+  let titleFlashing = false;
+  let flashTimer = null;
+  function startTitleFlash(message) {
+    stopTitleFlash();
+    if (!document.hidden) return; // you're already looking — no need to blink
+    titleFlashing = true;
+    let on = true;
+    let blinks = 0;
+    document.title = message;
+    flashTimer = setInterval(() => {
+      on = !on;
+      document.title = on ? message : "⏰ Time's up!";
+      if (++blinks >= 30) stopTitleFlash(); // safety cap so it can't blink forever
+    }, 1000);
+  }
+  function stopTitleFlash() {
+    if (flashTimer) { clearInterval(flashTimer); flashTimer = null; }
+    if (titleFlashing) { titleFlashing = false; updateTitle(); }
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) stopTitleFlash(); });
+  window.addEventListener('focus', stopTitleFlash);
 
   function updateLengthToggleUI() {
     len25Btn.classList.toggle('active', workMinutes === 25);
@@ -891,6 +915,7 @@
       applyPhaseMode();
       playEndSound();
       triggerFlash();
+      startTitleFlash("Warmed up — let's go 🔥");
       updateLengthToggleUI();
       updateDisplay();
     } else if (phase === 'work') {
@@ -901,6 +926,7 @@
       applyPhaseMode();
       playEndSound();
       triggerFlash();
+      startTitleFlash('🍅 Break time!');
       updateLengthToggleUI();
       updateDisplay();
       // mainBtn stays 'Pause' so the user can still pause the rest.
@@ -912,6 +938,7 @@
       applyPhaseMode();
       playEndSound();
       triggerFlash();
+      startTitleFlash('✅ Back to work!');
       hasStarted = false;
       mainBtn.textContent = 'Start';
       timerFraction.classList.remove('visible');
