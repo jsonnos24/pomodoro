@@ -386,6 +386,72 @@
     margin-right: auto;
   }
 
+  /* History */
+  .history-panel {
+    display: none;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    text-align: left;
+  }
+  .history-panel.open { display: block; }
+  .history-list.scroll { max-height: 220px; overflow-y: auto; }
+  .hist-day {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    margin: 10px 0 4px;
+  }
+  .hist-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 12px;
+  }
+  .hist-meta {
+    color: var(--text-muted);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .hist-task {
+    color: var(--text);
+    cursor: text;
+    border-radius: 4px;
+    padding: 1px 3px;
+    overflow-wrap: anywhere;
+  }
+  .hist-task:hover { background: var(--surface); }
+  .hist-task-empty { color: var(--text-muted); font-style: italic; }
+  .hist-edit {
+    font-family: inherit;
+    font-size: 12px;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid rgba(56,189,248,0.35);
+    border-radius: 4px;
+    padding: 1px 4px;
+    outline: none;
+    flex: 1;
+    min-width: 0;
+  }
+  .hist-empty { color: var(--text-muted); font-size: 12px; padding: 6px 0; }
+  .hist-more {
+    display: block;
+    margin: 8px auto 0;
+    background: transparent;
+    border: none;
+    color: var(--accent-work);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    opacity: 0.85;
+  }
+  .hist-more:hover { opacity: 1; }
+  body.break-mode .hist-more { color: var(--accent-break); }
+
   /* Mute toggle (top-right corner) */
   .mute-btn {
     position: absolute;
@@ -510,6 +576,15 @@
         <span class="stat-value" id="yearCount">0</span>
         <span class="stat-label">Year</span>
       </div>
+    </div>
+
+    <button class="stats-toggle history-toggle" id="historyToggle" aria-expanded="false" aria-controls="historyPanel">
+      History <span class="chevron">▾</span>
+    </button>
+
+    <div class="history-panel" id="historyPanel">
+      <div class="history-list" id="historyList"></div>
+      <button class="hist-more" id="historyMore" type="button" style="display:none"></button>
     </div>
 
     <div class="sound-row">
@@ -658,6 +733,10 @@
   const yearCountEl = document.getElementById('yearCount');
   const muteBtn = document.getElementById('muteBtn');
   const soundSelect = document.getElementById('soundSelect');
+  const historyToggle = document.getElementById('historyToggle');
+  const historyPanel = document.getElementById('historyPanel');
+  const historyList = document.getElementById('historyList');
+  const historyMore = document.getElementById('historyMore');
 
   // ── Progress ring setup ──
   const RADIUS = 100;
@@ -760,8 +839,102 @@
     yearCountEl.textContent = totals.year;
   }
 
-  // Filled in by the history feature; defined here so recordSession can call it.
-  function renderHistory() {}
+  // ── History ──
+  let historyExpanded = false;
+
+  function escapeHtml(str) {
+    return str.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+
+  function dayHeading(ts, now) {
+    const key = localDateKey(new Date(ts));
+    const todayKey = localDateKey(now);
+    const y = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    y.setDate(y.getDate() - 1);
+    if (key === todayKey) return 'Today';
+    if (key === localDateKey(y)) return 'Yesterday';
+    return new Date(ts).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  function rowHtml(s) {
+    const hasTask = s.task && s.task.trim();
+    const taskText = hasTask ? escapeHtml(s.task) : 'Focus session';
+    const cls = hasTask ? 'hist-task' : 'hist-task hist-task-empty';
+    let meta = '';
+    if (!s.migrated && s.minutes) {
+      const time = new Date(s.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      meta = `<span class="hist-meta">${time} · ${s.minutes}m</span>`;
+    }
+    return `<div class="hist-row">${meta}<span class="${cls}" data-id="${escapeHtml(String(s.id))}" title="Click to edit">${taskText}</span></div>`;
+  }
+
+  function renderHistory() {
+    const sessions = loadData().sessions.slice().sort((a, b) => b.ts - a.ts);
+    const now = new Date();
+    const max = historyExpanded ? Infinity : 3;
+    let html = '';
+    let rows = 0;
+    let lastDay = null;
+    for (const s of sessions) {
+      if (rows >= max) break;
+      const day = dayHeading(s.ts, now);
+      if (day !== lastDay) { html += `<div class="hist-day">${day}</div>`; lastDay = day; }
+      html += rowHtml(s);
+      rows++;
+    }
+    historyList.innerHTML = html || '<div class="hist-empty">No pomodoros yet — your completed sessions will appear here.</div>';
+    historyList.classList.toggle('scroll', historyExpanded);
+    if (sessions.length > 3) {
+      historyMore.style.display = '';
+      historyMore.textContent = historyExpanded ? 'Show less' : `Show all (${sessions.length})`;
+    } else {
+      historyMore.style.display = 'none';
+    }
+  }
+
+  // Inline edit of a session's task label (event-delegated on the list).
+  historyList.addEventListener('click', (e) => {
+    const span = e.target.closest && e.target.closest('.hist-task');
+    if (span) startTaskEdit(span);
+  });
+
+  function startTaskEdit(span) {
+    const id = span.dataset.id;
+    const data = loadData();
+    const s = data.sessions.find((x) => String(x.id) === id);
+    if (!s) return;
+    const input = document.createElement('input');
+    input.className = 'hist-edit';
+    input.value = s.task || '';
+    input.maxLength = 80;
+    span.replaceWith(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const commit = (save) => {
+      if (done) return;
+      done = true;
+      if (save) { s.task = input.value.trim(); saveData(data); }
+      renderHistory();
+    };
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') commit(true);
+      else if (ev.key === 'Escape') commit(false);
+    });
+    input.addEventListener('blur', () => commit(true));
+  }
+
+  historyToggle.addEventListener('click', () => {
+    const open = historyPanel.classList.toggle('open');
+    historyToggle.classList.toggle('open', open);
+    historyToggle.setAttribute('aria-expanded', String(open));
+    if (open) renderHistory();
+  });
+
+  historyMore.addEventListener('click', () => {
+    historyExpanded = !historyExpanded;
+    renderHistory();
+  });
 
   // ── Timer display ──
   function formatTime(secs) {
@@ -1019,6 +1192,7 @@
   timeLeft = workMinutes * 60;
   updateLengthToggleUI();
   renderStats();
+  renderHistory();
   updateDisplay();
 </script>
 </body>
