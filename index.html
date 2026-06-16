@@ -462,17 +462,50 @@
     };
   }
 
+  // Count completed pomodoros per local day from the session log -> { 'YYYY-MM-DD': n }.
+  function dailyCounts(sessions) {
+    const counts = {};
+    for (const s of sessions) {
+      const key = localDateKey(new Date(s.ts));
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    return counts;
+  }
+
+  // 'YYYY-MM-DD' -> epoch ms at local noon (used to place migrated counts on their day).
+  function dayKeyToNoon(key) {
+    const [y, m, d] = key.split('-').map(Number);
+    return new Date(y, m - 1, d, 12, 0, 0).getTime();
+  }
+
+  // Normalize any stored shape to v3 (a per-session log).
   function migrate(raw) {
-    if (raw && raw.version === 2) {
+    const fresh = { version: 3, sessions: [], lengthPref: 25, sound: 'chime', muted: false, preheat: false };
+    if (!raw || typeof raw !== 'object') return fresh;
+
+    if (raw.version === 3) {
       return {
-        version: 2,
-        history: raw.history || {},
+        version: 3,
+        sessions: Array.isArray(raw.sessions) ? raw.sessions : [],
         lengthPref: raw.lengthPref === 50 ? 50 : 25,
+        sound: ['chime', 'bell', 'arcade'].includes(raw.sound) ? raw.sound : 'chime',
+        muted: raw.muted === true,
+        preheat: raw.preheat === true,
       };
     }
-    const result = { version: 2, history: {}, lengthPref: 25 };
-    if (raw && typeof raw === 'object' && raw.date && raw.count > 0) {
-      result.history[raw.date] = raw.count;
+
+    // Older formats had only per-day counts (no per-session timestamp/task). Synthesize
+    // migrated session records so streak/totals are preserved; they render as "Focus session".
+    const result = Object.assign({}, fresh, { lengthPref: raw.lengthPref === 50 ? 50 : 25 });
+    const addMigrated = (dateKey, count) => {
+      for (let i = 0; i < count; i++) {
+        result.sessions.push({ id: `m${dateKey}-${i}`, ts: dayKeyToNoon(dateKey), minutes: null, task: '', migrated: true });
+      }
+    };
+    if (raw.version === 2 && raw.history && typeof raw.history === 'object') {
+      for (const dateKey in raw.history) addMigrated(dateKey, raw.history[dateKey]);
+    } else if (raw.date && raw.count > 0) {
+      addMigrated(raw.date, raw.count);
     }
     return result;
   }
@@ -488,6 +521,7 @@
   const mainBtn = document.getElementById('mainBtn');
   const resetBtn = document.getElementById('resetBtn');
   const flash = document.getElementById('flash');
+  const taskInput = document.getElementById('taskInput');
   const lengthToggle = document.getElementById('lengthToggle');
   const len25Btn = document.getElementById('len25');
   const len50Btn = document.getElementById('len50');
@@ -550,19 +584,26 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }
 
+  function newId() {
+    return (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  }
+
   function recordSession() {
     const data = loadData();
-    const key = localDateKey(new Date());
-    data.history[key] = (data.history[key] || 0) + 1;
+    data.sessions.push({ id: newId(), ts: Date.now(), minutes: workMinutes, task: taskInput.value.trim() });
     saveData(data);
     renderStats();
+    renderHistory();
   }
 
   function renderStats() {
     const data = loadData();
     const now = new Date();
-    const totals = computeTotals(data.history, now);
-    const streak = computeStreak(data.history, now);
+    const counts = dailyCounts(data.sessions);
+    const totals = computeTotals(counts, now);
+    const streak = computeStreak(counts, now);
     streakCountEl.textContent = streak;
     sessionCountEl.textContent = totals.today;
     weekCountEl.textContent = totals.week;
@@ -570,6 +611,9 @@
     threeMoCountEl.textContent = totals.threeMonths;
     yearCountEl.textContent = totals.year;
   }
+
+  // Filled in by the history feature; defined here so recordSession can call it.
+  function renderHistory() {}
 
   // ── Timer display ──
   function formatTime(secs) {

@@ -7,7 +7,7 @@ function loadLogic() {
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   const m = html.match(/\/\/ ==PURE-LOGIC-START==([\s\S]*?)\/\/ ==PURE-LOGIC-END==/);
   if (!m) throw new Error('pure-logic markers not found in index.html');
-  const names = ['localDateKey', 'mostRecentMonday', 'computeStreak', 'sumRange', 'computeTotals', 'migrate'];
+  const names = ['localDateKey', 'mostRecentMonday', 'computeStreak', 'sumRange', 'computeTotals', 'migrate', 'dailyCounts'];
   const factory = new Function(`${m[1]}\nreturn { ${names.join(', ')} };`);
   return factory();
 }
@@ -69,24 +69,45 @@ test('computeTotals computes today/week/month/3mo/year windows', () => {
   assert.strictEqual(t.year, 19);         // 4 + 2 + 1 + 5 + 7
 });
 
-test('migrate passes through v2 data', () => {
-  const v2 = { version: 2, history: { '2026-06-15': 3 }, lengthPref: 50 };
-  assert.deepStrictEqual(L.migrate(v2), v2);
+test('migrate passes through and normalizes v3 data', () => {
+  const v3 = { version: 3, sessions: [{ id: 'a', ts: 1, minutes: 25, task: 'x' }], lengthPref: 50, sound: 'bell', muted: true, preheat: true };
+  assert.deepStrictEqual(L.migrate(v3), v3);
 });
 
-test('migrate converts old format, carrying today count into history', () => {
-  const old = { date: '2026-06-15', count: 4, streak: 9, lastActiveDate: '2026-06-15' };
-  const r = L.migrate(old);
-  assert.strictEqual(r.version, 2);
-  assert.strictEqual(r.lengthPref, 25);
-  assert.deepStrictEqual(r.history, { '2026-06-15': 4 });
+test('migrate clamps invalid v3 fields to defaults', () => {
+  const r = L.migrate({ version: 3, sessions: 'nope', lengthPref: 99, sound: 'foo', muted: 'yes', preheat: 1 });
+  assert.deepStrictEqual(r, { version: 3, sessions: [], lengthPref: 25, sound: 'chime', muted: false, preheat: false });
 });
 
-test('migrate turns null into a fresh v2 default', () => {
-  assert.deepStrictEqual(L.migrate(null), { version: 2, history: {}, lengthPref: 25 });
+test('migrate converts v2 history into synthesized sessions', () => {
+  const r = L.migrate({ version: 2, history: { '2026-06-15': 3, '2026-06-14': 1 }, lengthPref: 50 });
+  assert.strictEqual(r.version, 3);
+  assert.strictEqual(r.lengthPref, 50);
+  assert.strictEqual(r.sessions.length, 4);
+  assert.ok(r.sessions.every((s) => s.migrated === true && s.minutes === null && s.task === ''));
+  assert.deepStrictEqual(L.dailyCounts(r.sessions), { '2026-06-15': 3, '2026-06-14': 1 });
+});
+
+test('migrate converts old single-counter format into sessions', () => {
+  const r = L.migrate({ date: '2026-06-15', count: 2, streak: 9 });
+  assert.strictEqual(r.version, 3);
+  assert.strictEqual(r.sessions.length, 2);
+  assert.deepStrictEqual(L.dailyCounts(r.sessions), { '2026-06-15': 2 });
+});
+
+test('migrate turns null into a fresh v3 default', () => {
+  assert.deepStrictEqual(L.migrate(null), { version: 3, sessions: [], lengthPref: 25, sound: 'chime', muted: false, preheat: false });
 });
 
 test('migrate ignores old format with zero count', () => {
-  const r = L.migrate({ date: '2026-06-15', count: 0, streak: 0 });
-  assert.deepStrictEqual(r.history, {});
+  assert.deepStrictEqual(L.migrate({ date: '2026-06-15', count: 0 }).sessions, []);
+});
+
+test('dailyCounts tallies sessions per local day', () => {
+  const sessions = [
+    { ts: new Date(2026, 5, 15, 9).getTime() },
+    { ts: new Date(2026, 5, 15, 14).getTime() },
+    { ts: new Date(2026, 5, 14, 23).getTime() },
+  ];
+  assert.deepStrictEqual(L.dailyCounts(sessions), { '2026-06-15': 2, '2026-06-14': 1 });
 });
