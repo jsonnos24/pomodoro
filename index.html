@@ -586,6 +586,15 @@
     progressRing.style.strokeDashoffset = CIRCUMFERENCE * (1 - progress);
 
     timerFraction.textContent = `of ${total / 60} min`;
+    updateTitle();
+  }
+
+  // Reflect the countdown in the browser tab title while a session is active.
+  function updateTitle() {
+    if (!hasStarted) { document.title = 'Pomodoro'; return; }
+    const label = isWork ? 'Focus' : 'Break';
+    const prefix = running ? '' : '⏸ '; // pause marker when stopped mid-session
+    document.title = `${prefix}${formatTime(timeLeft)} · ${label}`;
   }
 
   function updateLengthToggleUI() {
@@ -686,12 +695,14 @@
     mainBtn.textContent = 'Pause';
     timerFraction.classList.add('visible');
     updateLengthToggleUI();
+    updateTitle();
   }
 
   function pause() {
     stopInterval();
     mainBtn.textContent = 'Resume';
     updateLengthToggleUI();
+    updateTitle();
   }
 
   function reset() {
