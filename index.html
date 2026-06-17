@@ -261,6 +261,47 @@
     background: rgba(30, 44, 70, 0.8);
   }
 
+  /* Plan-your-day row */
+  .plan-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    padding: 12px 16px;
+    margin-bottom: 24px;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  .plan-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+  .end-time-input {
+    padding: 6px 10px;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 9px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s ease;
+    color-scheme: dark;
+  }
+  .end-time-input:focus { border-color: rgba(56, 189, 248, 0.35); }
+  .plan-result {
+    flex-basis: 100%;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .plan-result .plan-count { font-weight: 700; color: var(--accent-work); }
+  body.break-mode .plan-result .plan-count { color: var(--accent-break); }
+  .plan-result.plan-empty { color: var(--text-muted); }
+
   /* Stats row */
   .stats {
     display: flex;
@@ -551,6 +592,12 @@
       maxlength="80"
     />
 
+    <div class="plan-row">
+      <label class="plan-label" for="endTimeInput">Done by</label>
+      <input type="time" id="endTimeInput" class="end-time-input" aria-label="What time you want to finish today" />
+      <span class="plan-result plan-empty" id="planResult">Set an end time to plan your day.</span>
+    </div>
+
     <div class="stats">
       <div class="stat">
         <span class="stat-value" id="streakCount">0</span>
@@ -669,6 +716,13 @@
     return counts;
   }
 
+  // How many focus sessions of `focusMin` fit into `remainingMin`, with a `breakMin`
+  // break between each (but no trailing break after the last one). Clamped at 0.
+  function pomodorosLeft(remainingMin, focusMin, breakMin) {
+    if (remainingMin < focusMin) return 0;
+    return Math.floor((remainingMin + breakMin) / (focusMin + breakMin));
+  }
+
   // 'YYYY-MM-DD' -> epoch ms at local noon (used to place migrated counts on their day).
   function dayKeyToNoon(key) {
     const [y, m, d] = key.split('-').map(Number);
@@ -677,7 +731,7 @@
 
   // Normalize any stored shape to v3 (a per-session log).
   function migrate(raw) {
-    const fresh = { version: 3, sessions: [], lengthPref: 25, sound: 'chime', muted: false, preheat: false };
+    const fresh = { version: 3, sessions: [], lengthPref: 25, sound: 'chime', muted: false, preheat: false, endTime: '' };
     if (!raw || typeof raw !== 'object') return fresh;
 
     if (raw.version === 3) {
@@ -688,6 +742,7 @@
         sound: ['chime', 'bell', 'arcade'].includes(raw.sound) ? raw.sound : 'chime',
         muted: raw.muted === true,
         preheat: raw.preheat === true,
+        endTime: typeof raw.endTime === 'string' ? raw.endTime : '',
       };
     }
 
@@ -736,6 +791,8 @@
   const historyPanel = document.getElementById('historyPanel');
   const historyList = document.getElementById('historyList');
   const historyMore = document.getElementById('historyMore');
+  const endTimeInput = document.getElementById('endTimeInput');
+  const planResult = document.getElementById('planResult');
 
   // ── Progress ring setup ──
   const RADIUS = 100;
@@ -805,25 +862,29 @@
   }
 
   // Attention alert for real session boundaries: sound (if unmuted) + vibrate, repeating
-  // every few seconds while the tab is hidden, until the user returns (with a safety cap).
+  // every few seconds while the tab is hidden — but only a few times so it stops nagging.
+  const ALERT_MAX_FIRES = 3;            // total alerts per session boundary
   let alertRepeatTimer = null;
-  let alertRepeatCap = null;
+  let alertCount = 0;
   function fireAlertOnce() {
     if (!muted) playSound(soundName);
     vibrate();
+    alertCount++;
   }
   function playEndAlert() {
-    fireAlertOnce();
+    alertCount = 0;
+    fireAlertOnce();                    // first of the 3
     if (document.hidden) startAlertRepeat();
   }
   function startAlertRepeat() {
     stopAlertRepeat();
-    alertRepeatTimer = setInterval(fireAlertOnce, 4000);  // gentle spacing, not a blare
-    alertRepeatCap = setTimeout(stopAlertRepeat, 90000);  // give up after ~90s if never seen
+    alertRepeatTimer = setInterval(() => {
+      fireAlertOnce();                  // gentle spacing, not a blare
+      if (alertCount >= ALERT_MAX_FIRES) stopAlertRepeat();
+    }, 4000);
   }
   function stopAlertRepeat() {
     if (alertRepeatTimer) { clearInterval(alertRepeatTimer); alertRepeatTimer = null; }
-    if (alertRepeatCap) { clearTimeout(alertRepeatCap); alertRepeatCap = null; }
   }
 
   // ── Storage (history model) ──
@@ -865,6 +926,44 @@
     monthCountEl.textContent = totals.month;
     threeMoCountEl.textContent = totals.threeMonths;
     yearCountEl.textContent = totals.year;
+  }
+
+  // ── Plan your day: pomodoros remaining before your end time ──
+  const BREAK_MINUTES = REST_DURATION / 60; // breaks count against your time
+
+  // Whole minutes from `now` until today's "HH:MM"; negative if that time has passed.
+  function minutesUntil(hhmm, now) {
+    const [h, m] = hhmm.split(':').map(Number);
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
+    return Math.floor((end.getTime() - now.getTime()) / 60000);
+  }
+
+  function renderPlan() {
+    const value = endTimeInput.value;
+    if (!value) {
+      planResult.classList.add('plan-empty');
+      planResult.textContent = 'Set an end time to plan your day.';
+      return;
+    }
+    const remaining = minutesUntil(value, new Date());
+    const n25 = pomodorosLeft(remaining, 25, BREAK_MINUTES);
+    const n50 = pomodorosLeft(remaining, 50, BREAK_MINUTES);
+    if (n25 === 0 && n50 === 0) {
+      planResult.classList.add('plan-empty');
+      planResult.textContent = "Workday's done — 0 pomodoros left.";
+      return;
+    }
+    planResult.classList.remove('plan-empty');
+    planResult.innerHTML =
+      `≈ <span class="plan-count">${n25}</span> × 25-min · ` +
+      `<span class="plan-count">${n50}</span> × 50-min left today`;
+  }
+
+  function setEndTime(value) {
+    const data = loadData();
+    data.endTime = value;
+    saveData(data);
+    renderPlan();
   }
 
   // ── History ──
@@ -1041,8 +1140,13 @@
   }
   // When the user returns to the tab, stop both the title flash and the repeating sound.
   function stopAlerts() { stopTitleFlash(); stopAlertRepeat(); }
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) stopAlerts(); });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) { stopAlerts(); renderPlan(); } // recount when you come back to the tab
+  });
   window.addEventListener('focus', stopAlerts);
+
+  endTimeInput.addEventListener('input', () => setEndTime(endTimeInput.value));
+  setInterval(renderPlan, 60000); // tick down through the day while the tab is open
 
   function updateLengthToggleUI() {
     len25Btn.classList.toggle('active', workMinutes === 25);
@@ -1226,11 +1330,13 @@
   preheat = bootData.preheat;
   soundSelect.value = soundName;
   warmupCheck.checked = preheat;
+  endTimeInput.value = bootData.endTime;
   updateMuteUI();
   timeLeft = workMinutes * 60;
   updateLengthToggleUI();
   renderStats();
   renderHistory();
+  renderPlan();
   updateDisplay();
 </script>
 </body>

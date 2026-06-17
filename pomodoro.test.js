@@ -7,7 +7,7 @@ function loadLogic() {
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   const m = html.match(/\/\/ ==PURE-LOGIC-START==([\s\S]*?)\/\/ ==PURE-LOGIC-END==/);
   if (!m) throw new Error('pure-logic markers not found in index.html');
-  const names = ['localDateKey', 'mostRecentMonday', 'computeStreak', 'sumRange', 'computeTotals', 'migrate', 'dailyCounts'];
+  const names = ['localDateKey', 'mostRecentMonday', 'computeStreak', 'sumRange', 'computeTotals', 'migrate', 'dailyCounts', 'pomodorosLeft'];
   const factory = new Function(`${m[1]}\nreturn { ${names.join(', ')} };`);
   return factory();
 }
@@ -70,13 +70,13 @@ test('computeTotals computes today/week/month/3mo/year windows', () => {
 });
 
 test('migrate passes through and normalizes v3 data', () => {
-  const v3 = { version: 3, sessions: [{ id: 'a', ts: 1, minutes: 25, task: 'x' }], lengthPref: 50, sound: 'bell', muted: true, preheat: true };
+  const v3 = { version: 3, sessions: [{ id: 'a', ts: 1, minutes: 25, task: 'x' }], lengthPref: 50, sound: 'bell', muted: true, preheat: true, endTime: '17:00' };
   assert.deepStrictEqual(L.migrate(v3), v3);
 });
 
 test('migrate clamps invalid v3 fields to defaults', () => {
-  const r = L.migrate({ version: 3, sessions: 'nope', lengthPref: 99, sound: 'foo', muted: 'yes', preheat: 1 });
-  assert.deepStrictEqual(r, { version: 3, sessions: [], lengthPref: 25, sound: 'chime', muted: false, preheat: false });
+  const r = L.migrate({ version: 3, sessions: 'nope', lengthPref: 99, sound: 'foo', muted: 'yes', preheat: 1, endTime: 42 });
+  assert.deepStrictEqual(r, { version: 3, sessions: [], lengthPref: 25, sound: 'chime', muted: false, preheat: false, endTime: '' });
 });
 
 test('migrate converts v2 history into synthesized sessions', () => {
@@ -96,11 +96,29 @@ test('migrate converts old single-counter format into sessions', () => {
 });
 
 test('migrate turns null into a fresh v3 default', () => {
-  assert.deepStrictEqual(L.migrate(null), { version: 3, sessions: [], lengthPref: 25, sound: 'chime', muted: false, preheat: false });
+  assert.deepStrictEqual(L.migrate(null), { version: 3, sessions: [], lengthPref: 25, sound: 'chime', muted: false, preheat: false, endTime: '' });
 });
 
 test('migrate ignores old format with zero count', () => {
   assert.deepStrictEqual(L.migrate({ date: '2026-06-15', count: 0 }).sessions, []);
+});
+
+test('pomodorosLeft fits sessions with a break between, no trailing break', () => {
+  // 2 hours left, 25-min focus + 10-min break: 25+10+25+10+25 = 95 <= 120, 4th would need 130
+  assert.strictEqual(L.pomodorosLeft(120, 25, 10), 3);
+  // 2 hours left, 50-min focus: 50+10+50 = 110 <= 120, 3rd would need 170
+  assert.strictEqual(L.pomodorosLeft(120, 50, 10), 2);
+});
+
+test('pomodorosLeft fits exactly one when time equals one focus block', () => {
+  assert.strictEqual(L.pomodorosLeft(25, 25, 10), 1);
+  assert.strictEqual(L.pomodorosLeft(60, 25, 10), 2); // 25+10+25 = 60 exactly
+});
+
+test('pomodorosLeft returns zero when not even one session fits', () => {
+  assert.strictEqual(L.pomodorosLeft(20, 25, 10), 0);
+  assert.strictEqual(L.pomodorosLeft(0, 25, 10), 0);
+  assert.strictEqual(L.pomodorosLeft(-30, 25, 10), 0); // end time already passed
 });
 
 test('dailyCounts tallies sessions per local day', () => {
