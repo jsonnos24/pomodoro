@@ -999,6 +999,103 @@
     }
   }
 
+  // ── Plan mutation helpers ──
+  function addTask(name) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const data = loadData();
+    data.plan.push({ id: newId(), name: trimmed.slice(0, 80), count: 1, done: false });
+    saveData(data);
+    renderPlan();
+  }
+
+  function updateTask(id, patch) {
+    const data = loadData();
+    const task = data.plan.find((x) => x.id === id);
+    if (!task) return;
+    Object.assign(task, patch);
+    saveData(data);
+    renderPlan();
+  }
+
+  function removeTask(id) {
+    const data = loadData();
+    data.plan = data.plan.filter((x) => x.id !== id);
+    saveData(data);
+    renderPlan();
+  }
+
+  function moveTask(id, dir) {
+    const data = loadData();
+    const i = data.plan.findIndex((x) => x.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= data.plan.length) return;
+    const [moved] = data.plan.splice(i, 1);
+    data.plan.splice(j, 0, moved);
+    saveData(data);
+    renderPlan();
+  }
+
+  // ── Add-task input ──
+  addTaskInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      addTask(addTaskInput.value);
+      addTaskInput.value = '';
+    }
+  });
+
+  // ── Task list click delegation ──
+  taskList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    const row = e.target.closest('.task-row');
+    if (!row) return;
+    const id = row.dataset.id;
+    const data = loadData();
+    const task = data.plan.find((x) => x.id === id);
+    if (!task) return;
+
+    switch (btn.dataset.act) {
+      case 'up': moveTask(id, -1); break;
+      case 'down': moveTask(id, 1); break;
+      case 'inc': updateTask(id, { count: task.count + 1 }); break;
+      case 'dec': updateTask(id, { count: Math.max(1, task.count - 1) }); break;
+      case 'del': removeTask(id); break;
+      case 'check': updateTask(id, { done: !task.done }); break;
+      case 'edit': startTaskNameEdit(row, id); break;
+    }
+  });
+
+  // ── Inline task name editing ──
+  function startTaskNameEdit(row, id) {
+    const span = row.querySelector('.task-name');
+    if (!span) return;
+    const data = loadData();
+    const task = data.plan.find((x) => x.id === id);
+    if (!task) return;
+    const input = document.createElement('input');
+    input.className = 'task-edit-input';
+    input.value = task.name;
+    input.maxLength = 80;
+    span.replaceWith(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const commit = (save) => {
+      if (done) return;
+      done = true;
+      if (save) {
+        const v = input.value.trim();
+        if (v) updateTask(id, { name: v.slice(0, 80) }); else renderPlan(); // empty reverts
+      } else { renderPlan(); }
+    };
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') commit(true);
+      else if (ev.key === 'Escape') commit(false);
+    });
+    input.addEventListener('blur', () => commit(true));
+  }
+
   planToggle.addEventListener('click', () => {
     const open = planPanel.classList.toggle('open');
     planToggle.classList.toggle('open', open);
