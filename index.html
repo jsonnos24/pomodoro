@@ -73,6 +73,26 @@
     transition: box-shadow 0.6s ease;
   }
 
+  /* Two-column desktop layout (single stacked column on mobile/tablet) */
+  .side-col { text-align: left; }
+
+  @media (min-width: 900px) {
+    .card {
+      width: 880px;
+      display: flex;
+      align-items: flex-start;
+      gap: 44px;
+      text-align: left;
+      padding: 40px 44px;
+    }
+    .timer-col { width: 340px; flex: none; text-align: center; }
+    .side-col { flex: 1; min-width: 0; }
+    /* Toggles are centered-block by default; left-align them in the side column
+       and let the first one sit flush with the top of the timer. */
+    .side-col .stats-toggle { margin-left: 0; margin-right: auto; }
+    .side-col > .stats-toggle:first-child { margin-top: 0; }
+  }
+
   /* Length toggle */
   .length-toggle {
     display: inline-flex;
@@ -584,6 +604,7 @@
   <div class="flash-overlay" id="flash"></div>
 
   <div class="card">
+    <div class="timer-col">
     <div class="length-toggle" id="lengthToggle">
       <button class="length-btn" id="len25" data-min="25">25</button>
       <button class="length-btn" id="len50" data-min="50">50</button>
@@ -628,6 +649,9 @@
       maxlength="80"
     />
 
+    </div><!-- /.timer-col -->
+
+    <div class="side-col">
     <button class="stats-toggle plan-toggle" id="planToggle" aria-expanded="false" aria-controls="planPanel">
       Plan <span class="chevron">▾</span>
     </button>
@@ -659,6 +683,7 @@
       <div class="history-list" id="historyList"></div>
       <button class="hist-more" id="historyMore" type="button" style="display:none"></button>
     </div>
+    </div><!-- /.side-col -->
 
   </div>
 
@@ -962,6 +987,15 @@
     return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   }
 
+  // Whole-minute count -> "4h 25m" / "1h" / "45m" for readable schedule slack.
+  function formatDuration(min) {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    if (h && m) return `${h}h ${m}m`;
+    if (h) return `${h}h`;
+    return `${m}m`;
+  }
+
   function planScheduleOpts() {
     return { startMs: scheduleStartMs(), focusMin: workMinutes, breakMin: BREAK_MINUTES };
   }
@@ -1022,8 +1056,8 @@
       let tail = '';
       if (check) {
         tail = check.madeIt
-          ? ` · <span class="ok">✅ ${check.deltaMin} min early</span>`
-          : ` · <span class="over">⚠️ runs ${-check.deltaMin} min over</span>`;
+          ? ` · <span class="ok">✅ ${formatDuration(check.deltaMin)} early</span>`
+          : ` · <span class="over">⚠️ runs ${formatDuration(-check.deltaMin)} over</span>`;
       }
       planSummary.innerHTML = `Finishes ~${formatClock(finish)}${tail}`;
     }
@@ -1571,6 +1605,12 @@
   renderPlan();
   renderPills();
   if (!taskInput.value.trim()) loadActiveTaskName();
+  // On desktop the side column has room, so open the Plan panel by default.
+  if (window.matchMedia && window.matchMedia('(min-width: 900px)').matches) {
+    planPanel.classList.add('open');
+    planToggle.classList.add('open');
+    planToggle.setAttribute('aria-expanded', 'true');
+  }
   updateDisplay();
 </script>
 </body>
