@@ -576,7 +576,7 @@
     .timer-ring { width: 190px; height: 190px; }
     .timer-digits { font-size: 44px; }
     .btn-primary { padding: 12px 28px; }
-    .stats { gap: 24px; }
+
   }
 </style>
 </head>
@@ -968,7 +968,7 @@
 
   function rowHtmlForTask(task, block, isActive) {
     const cls = 'task-row' + (isActive ? ' active' : '') + (task.done ? ' done' : '');
-    const window = block ? `${formatClock(block.startMs)}–${formatClock(block.endMs)}` : '';
+    const timeWindow = block ? `${formatClock(block.startMs)}–${formatClock(block.endMs)}` : '';
     const name = task.name ? escapeHtml(task.name) : 'Untitled task';
     return `
       <div class="${cls}" data-id="${escapeHtml(task.id)}">
@@ -977,7 +977,7 @@
           <button type="button" class="task-btn" data-act="down" aria-label="Move down">▼</button>
         </div>
         <span class="task-name" data-act="edit" title="Click to edit">${name}</span>
-        <span class="task-window">${window}</span>
+        <span class="task-window">${timeWindow}</span>
         <span class="task-stepper">
           <button type="button" class="task-btn" data-act="dec" aria-label="Fewer pomodoros">−</button>
           <span class="task-count">×${task.count}</span>
@@ -1128,10 +1128,10 @@
     switch (btn.dataset.act) {
       case 'up': moveTask(id, -1); break;
       case 'down': moveTask(id, 1); break;
-      case 'inc': updateTask(id, { count: task.count + 1 }); break;
+      case 'inc': updateTask(id, { count: task.count + 1, done: false }); break;
       case 'dec': updateTask(id, { count: Math.max(1, task.count - 1) }); break;
       case 'del': removeTask(id); break;
-      case 'check': updateTask(id, { done: !task.done }); break;
+      case 'check': updateTask(id, { done: !task.done }); loadActiveTaskName(); break;
       case 'edit': startTaskNameEdit(row, id); break;
     }
   });
