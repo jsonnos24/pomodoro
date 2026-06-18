@@ -302,34 +302,6 @@
   body.break-mode .plan-result .plan-count { color: var(--accent-break); }
   .plan-result.plan-empty { color: var(--text-muted); }
 
-  /* Stats row */
-  .stats {
-    display: flex;
-    justify-content: center;
-    gap: 32px;
-  }
-
-  .stat {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .stat-value {
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--text);
-  }
-
-  .stat-label {
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
-
   .stats-toggle {
     margin: 18px auto 0;
     display: block;
@@ -348,18 +320,6 @@
   body.break-mode .stats-toggle { color: var(--accent-break); }
   .stats-toggle .chevron { display: inline-block; transition: transform 0.25s ease; }
   .stats-toggle.open .chevron { transform: rotate(180deg); }
-
-  .stats-panel {
-    display: none;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 14px 18px;
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top: 1px solid rgba(255,255,255,0.06);
-  }
-  .stats-panel.open { display: flex; }
-  .stats-panel .stat-value { font-size: 18px; }
 
   /* Session complete flash */
   @keyframes flash {
@@ -598,40 +558,6 @@
       <span class="plan-result plan-empty" id="planResult">Set an end time to plan your day.</span>
     </div>
 
-    <div class="stats">
-      <div class="stat">
-        <span class="stat-value" id="streakCount">0</span>
-        <span class="stat-label">Day Streak</span>
-      </div>
-      <div class="stat">
-        <span class="stat-value" id="sessionCount">0</span>
-        <span class="stat-label">Today</span>
-      </div>
-    </div>
-
-    <button class="stats-toggle" id="statsToggle" aria-expanded="false" aria-controls="statsPanel">
-      View all stats <span class="chevron">▾</span>
-    </button>
-
-    <div class="stats-panel" id="statsPanel">
-      <div class="stat">
-        <span class="stat-value" id="weekCount">0</span>
-        <span class="stat-label">Week</span>
-      </div>
-      <div class="stat">
-        <span class="stat-value" id="monthCount">0</span>
-        <span class="stat-label">Month</span>
-      </div>
-      <div class="stat">
-        <span class="stat-value" id="threeMoCount">0</span>
-        <span class="stat-label">3 Months</span>
-      </div>
-      <div class="stat">
-        <span class="stat-value" id="yearCount">0</span>
-        <span class="stat-label">Year</span>
-      </div>
-    </div>
-
     <button class="stats-toggle history-toggle" id="historyToggle" aria-expanded="false" aria-controls="historyPanel">
       History <span class="chevron">▾</span>
     </button>
@@ -657,63 +583,6 @@
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
-  }
-
-  function mostRecentMonday(date) {
-    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const day = d.getDay(); // 0=Sun .. 6=Sat
-    const diff = (day === 0) ? 6 : day - 1; // days since Monday
-    d.setDate(d.getDate() - diff);
-    return d;
-  }
-
-  function computeStreak(history, today) {
-    const cursor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    // If today has no sessions yet, start counting from yesterday so an in-progress day doesn't break the streak.
-    if (!history[localDateKey(cursor)]) {
-      cursor.setDate(cursor.getDate() - 1);
-    }
-    let streak = 0;
-    while (history[localDateKey(cursor)] > 0) {
-      streak++;
-      cursor.setDate(cursor.getDate() - 1);
-    }
-    return streak;
-  }
-
-  function sumRange(history, fromKey, toKey) {
-    let total = 0;
-    for (const key in history) {
-      if (key >= fromKey && key <= toKey) total += history[key];
-    }
-    return total;
-  }
-
-  function computeTotals(history, today) {
-    const todayKey = localDateKey(today);
-    const weekStart = localDateKey(mostRecentMonday(today));
-    const monthStart = localDateKey(new Date(today.getFullYear(), today.getMonth(), 1));
-    const yearStart = localDateKey(new Date(today.getFullYear(), 0, 1));
-    const ninety = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    ninety.setDate(ninety.getDate() - 89); // inclusive 90-day window
-    const ninetyStart = localDateKey(ninety);
-    return {
-      today: history[todayKey] || 0,
-      week: sumRange(history, weekStart, todayKey),
-      month: sumRange(history, monthStart, todayKey),
-      threeMonths: sumRange(history, ninetyStart, todayKey),
-      year: sumRange(history, yearStart, todayKey),
-    };
-  }
-
-  // Count completed pomodoros per local day from the session log -> { 'YYYY-MM-DD': n }.
-  function dailyCounts(sessions) {
-    const counts = {};
-    for (const s of sessions) {
-      const key = localDateKey(new Date(s.ts));
-      counts[key] = (counts[key] || 0) + 1;
-    }
-    return counts;
   }
 
   // How many focus sessions of `focusMin` fit into `remainingMin`, with a `breakMin`
@@ -768,8 +637,6 @@
   const timerCue = document.getElementById('timerCue');
   const timerRing = document.getElementById('timerRing');
   const sessionLabel = document.getElementById('sessionLabel');
-  const sessionCountEl = document.getElementById('sessionCount');
-  const streakCountEl = document.getElementById('streakCount');
   const progressRing = document.getElementById('progressRing');
   const resetBtn = document.getElementById('resetBtn');
   const flash = document.getElementById('flash');
@@ -779,12 +646,6 @@
   const len50Btn = document.getElementById('len50');
   const warmupToggle = document.getElementById('warmupToggle');
   const warmupCheck = document.getElementById('warmupCheck');
-  const statsToggle = document.getElementById('statsToggle');
-  const statsPanel = document.getElementById('statsPanel');
-  const weekCountEl = document.getElementById('weekCount');
-  const monthCountEl = document.getElementById('monthCount');
-  const threeMoCountEl = document.getElementById('threeMoCount');
-  const yearCountEl = document.getElementById('yearCount');
   const muteBtn = document.getElementById('muteBtn');
   const soundSelect = document.getElementById('soundSelect');
   const historyToggle = document.getElementById('historyToggle');
@@ -910,22 +771,7 @@
     const data = loadData();
     data.sessions.push({ id: newId(), ts: Date.now(), minutes: workMinutes, task: taskInput.value.trim() });
     saveData(data);
-    renderStats();
     renderHistory();
-  }
-
-  function renderStats() {
-    const data = loadData();
-    const now = new Date();
-    const counts = dailyCounts(data.sessions);
-    const totals = computeTotals(counts, now);
-    const streak = computeStreak(counts, now);
-    streakCountEl.textContent = streak;
-    sessionCountEl.textContent = totals.today;
-    weekCountEl.textContent = totals.week;
-    monthCountEl.textContent = totals.month;
-    threeMoCountEl.textContent = totals.threeMonths;
-    yearCountEl.textContent = totals.year;
   }
 
   // ── Plan your day: pomodoros remaining before your end time ──
@@ -1188,12 +1034,6 @@
     saveData(data);
   });
 
-  statsToggle.addEventListener('click', () => {
-    const open = statsPanel.classList.toggle('open');
-    statsToggle.classList.toggle('open', open);
-    statsToggle.setAttribute('aria-expanded', String(open));
-  });
-
   function updateMuteUI() {
     muteBtn.textContent = muted ? '🔇' : '🔊';
   }
@@ -1334,7 +1174,6 @@
   updateMuteUI();
   timeLeft = workMinutes * 60;
   updateLengthToggleUI();
-  renderStats();
   renderHistory();
   renderPlan();
   updateDisplay();
