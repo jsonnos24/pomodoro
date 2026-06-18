@@ -988,6 +988,14 @@
       </div>`;
   }
 
+  // Write the active task's name into the timer's task field (editable; does not mutate the plan).
+  function loadActiveTaskName() {
+    const data = loadData();
+    const id = activeTaskId(data.plan);
+    const task = id ? data.plan.find((x) => x.id === id) : null;
+    taskInput.value = task ? task.name : '';
+  }
+
   function renderPlan() {
     const data = loadData();
     const plan = data.plan;
@@ -1449,6 +1457,12 @@
     } else if (phase === 'work') {
       // Work done -> record it and auto-start the 10-minute rest, still running.
       recordSession();
+      // Burn one pomodoro off the active task, then surface the next task's name.
+      const data = loadData();
+      data.plan = completeOnePomodoro(data.plan);
+      saveData(data);
+      renderPlan();
+      loadActiveTaskName();
       phase = 'break';
       timeLeft = REST_DURATION;
       applyPhaseMode();
@@ -1492,6 +1506,10 @@
   function start() {
     if (running) return;
     getAudioCtx(); // unlock/resume audio within this click gesture
+    // On a fresh work start, surface the active task's name if the user hasn't typed one.
+    if (!hasStarted && phase === 'work' && !taskInput.value.trim()) {
+      loadActiveTaskName();
+    }
     // Fresh/armed start with warm-up enabled -> begin with the 5-min pre-heat phase.
     if (!hasStarted && phase === 'work' && preheat) {
       phase = 'warmup';
@@ -1552,6 +1570,7 @@
   renderHistory();
   renderPlan();
   renderPills();
+  if (!taskInput.value.trim()) loadActiveTaskName();
   updateDisplay();
 </script>
 </body>
