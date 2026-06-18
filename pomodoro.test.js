@@ -7,7 +7,7 @@ function loadLogic() {
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   const m = html.match(/\/\/ ==PURE-LOGIC-START==([\s\S]*?)\/\/ ==PURE-LOGIC-END==/);
   if (!m) throw new Error('pure-logic markers not found in index.html');
-  const names = ['localDateKey', 'migrate', 'pomodorosLeft', 'buildSchedule', 'scheduleFinish', 'deadlineCheck'];
+  const names = ['localDateKey', 'migrate', 'pomodorosLeft', 'buildSchedule', 'scheduleFinish', 'deadlineCheck', 'activeTaskId', 'completeOnePomodoro'];
   const factory = new Function(`${m[1]}\nreturn { ${names.join(', ')} };`);
   return factory();
 }
@@ -156,4 +156,30 @@ test('deadlineCheck returns null without a deadline or finish', () => {
   const now = new Date(2026, 5, 18, 9, 0).getTime();
   assert.strictEqual(L.deadlineCheck(123, '', now), null);
   assert.strictEqual(L.deadlineCheck(null, '16:45', now), null);
+});
+
+test('activeTaskId returns the first not-done task', () => {
+  assert.strictEqual(L.activeTaskId([t('a', 1, true), t('b', 2), t('c', 1)]), 'b');
+  assert.strictEqual(L.activeTaskId([t('a', 1, true)]), null);
+  assert.strictEqual(L.activeTaskId([]), null);
+});
+
+test('completeOnePomodoro decrements the active task without mutating input', () => {
+  const plan = [t('a', 1, true), t('b', 3)];
+  const next = L.completeOnePomodoro(plan);
+  assert.strictEqual(next[1].count, 2);
+  assert.strictEqual(next[1].done, false);
+  assert.strictEqual(plan[1].count, 3); // original untouched
+});
+
+test('completeOnePomodoro marks the task done when it hits zero', () => {
+  const next = L.completeOnePomodoro([t('a', 1)]);
+  assert.deepStrictEqual(next[0], { id: 'a', name: 'a', count: 0, done: true });
+});
+
+test('completeOnePomodoro is a no-op when nothing is active', () => {
+  const plan = [t('a', 1, true)];
+  const next = L.completeOnePomodoro(plan);
+  assert.deepStrictEqual(next, plan);
+  assert.notStrictEqual(next, plan); // returns a copy, not the same reference
 });

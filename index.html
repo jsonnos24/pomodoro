@@ -652,6 +652,21 @@
     return raw.filter((p) => typeof p === 'string' && p.trim()).map((p) => p.slice(0, 80));
   }
 
+  function activeTaskId(plan) {
+    for (const task of plan) if (!task.done) return task.id;
+    return null;
+  }
+
+  // Returns a new plan with the active task's count decremented; done at 0.
+  function completeOnePomodoro(plan) {
+    const id = activeTaskId(plan);
+    return plan.map((task) => {
+      if (task.id !== id) return Object.assign({}, task);
+      const count = Math.max(0, task.count - 1);
+      return Object.assign({}, task, { count, done: count <= 0 });
+    });
+  }
+
   // Normalize any stored shape to v4 (a per-session log with plan and pills).
   function migrate(raw) {
     const fresh = { version: 4, sessions: [], lengthPref: 25, sound: 'chime', muted: false, preheat: false, endTime: '', plan: [], startOverride: '', pills: PILL_SEEDS.slice() };
