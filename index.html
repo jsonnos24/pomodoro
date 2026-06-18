@@ -524,6 +524,28 @@
     padding: 1px 4px; outline: none;
   }
 
+  .pill-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .pill {
+    background: var(--surface);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--text);
+    font-family: inherit; font-size: 11px; font-weight: 600;
+    padding: 4px 10px; border-radius: 999px; cursor: pointer;
+  }
+  .pill:hover { background: var(--surface-hover); }
+  .pill .pill-x { color: var(--text-muted); margin-left: 6px; }
+  .pill-edit-toggle {
+    background: transparent; border: none; color: var(--accent-work);
+    font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer; padding: 4px;
+  }
+  body.break-mode .pill-edit-toggle { color: var(--accent-break); }
+  .pill-add-input {
+    font-family: inherit; font-size: 11px;
+    background: var(--surface); color: var(--text);
+    border: 1px solid rgba(56,189,248,0.35); border-radius: 999px;
+    padding: 4px 10px; outline: none; width: 130px;
+  }
+
   /* Audio controls (mute speaker + sound picker, centered above Reset) */
   .mute-btn {
     background: transparent;
@@ -1036,6 +1058,46 @@
     renderPlan();
   }
 
+  // ── Pills ──
+  let pillEditMode = false;
+
+  function renderPills() {
+    const data = loadData();
+    let html = data.pills.map((p, i) =>
+      `<button type="button" class="pill" data-i="${i}">${escapeHtml(p)}${pillEditMode ? '<span class="pill-x" data-x="' + i + '">✕</span>' : ''}</button>`
+    ).join('');
+    if (pillEditMode) {
+      html += '<input class="pill-add-input" id="pillAddInput" type="text" placeholder="New pill…" maxlength="80" />';
+    }
+    html += `<button type="button" class="pill-edit-toggle" id="pillEditToggle">${pillEditMode ? 'done' : '✎'}</button>`;
+    pillRow.innerHTML = html;
+    if (pillEditMode) {
+      const add = document.getElementById('pillAddInput');
+      add.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const v = add.value.trim();
+          if (v) { const d = loadData(); d.pills.push(v.slice(0, 80)); saveData(d); renderPills(); }
+        }
+      });
+    }
+  }
+
+  pillRow.addEventListener('click', (e) => {
+    if (e.target.id === 'pillEditToggle') { pillEditMode = !pillEditMode; renderPills(); return; }
+    const x = e.target.closest('[data-x]');
+    if (x) {
+      const d = loadData();
+      d.pills.splice(Number(x.dataset.x), 1);
+      saveData(d);
+      renderPills();
+      return;
+    }
+    const pill = e.target.closest('.pill');
+    if (pill && !pillEditMode) {
+      addTask(loadData().pills[Number(pill.dataset.i)]);
+    }
+  });
+
   // ── Add-task input ──
   addTaskInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -1100,7 +1162,7 @@
     const open = planPanel.classList.toggle('open');
     planToggle.classList.toggle('open', open);
     planToggle.setAttribute('aria-expanded', String(open));
-    if (open) renderPlan();
+    if (open) { renderPlan(); renderPills(); }
   });
 
   startTimeInput.addEventListener('input', () => {
@@ -1489,6 +1551,7 @@
   updateLengthToggleUI();
   renderHistory();
   renderPlan();
+  renderPills();
   updateDisplay();
 </script>
 </body>
