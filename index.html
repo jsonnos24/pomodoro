@@ -598,25 +598,44 @@
     return new Date(y, m - 1, d, 12, 0, 0).getTime();
   }
 
-  // Normalize any stored shape to v3 (a per-session log).
+  const PILL_SEEDS = ['CTS Emails', 'Rockstar Emails', 'CTS Pipeline', 'Lesson Planning', 'Song writing'];
+
+  function normalizePlan(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((t, i) => ({
+      id: (t && t.id != null) ? String(t.id) : `t${i}`,
+      name: (t && typeof t.name === 'string') ? t.name.slice(0, 80) : '',
+      count: (t && Number.isFinite(t.count)) ? Math.max(1, Math.floor(t.count)) : 1,
+      done: !!(t && t.done),
+    }));
+  }
+
+  function normalizePills(raw) {
+    if (!Array.isArray(raw)) return PILL_SEEDS.slice();
+    return raw.filter((p) => typeof p === 'string' && p.trim()).map((p) => p.slice(0, 80));
+  }
+
+  // Normalize any stored shape to v4 (a per-session log with plan and pills).
   function migrate(raw) {
-    const fresh = { version: 3, sessions: [], lengthPref: 25, sound: 'chime', muted: false, preheat: false, endTime: '' };
+    const fresh = { version: 4, sessions: [], lengthPref: 25, sound: 'chime', muted: false, preheat: false, endTime: '', plan: [], startOverride: '', pills: PILL_SEEDS.slice() };
     if (!raw || typeof raw !== 'object') return fresh;
 
-    if (raw.version === 3) {
+    if (raw.version === 3 || raw.version === 4) {
       return {
-        version: 3,
+        version: 4,
         sessions: Array.isArray(raw.sessions) ? raw.sessions : [],
         lengthPref: raw.lengthPref === 50 ? 50 : 25,
         sound: ['chime', 'bell', 'arcade'].includes(raw.sound) ? raw.sound : 'chime',
         muted: raw.muted === true,
         preheat: raw.preheat === true,
         endTime: typeof raw.endTime === 'string' ? raw.endTime : '',
+        plan: normalizePlan(raw.plan),
+        startOverride: typeof raw.startOverride === 'string' ? raw.startOverride : '',
+        pills: ('pills' in raw) ? normalizePills(raw.pills) : PILL_SEEDS.slice(),
       };
     }
 
-    // Older formats had only per-day counts (no per-session timestamp/task). Synthesize
-    // migrated session records so streak/totals are preserved; they render as "Focus session".
+    // Older formats (v2 per-day counts, or the original single counter) -> synthesize sessions.
     const result = Object.assign({}, fresh, { lengthPref: raw.lengthPref === 50 ? 50 : 25 });
     const addMigrated = (dateKey, count) => {
       for (let i = 0; i < count; i++) {

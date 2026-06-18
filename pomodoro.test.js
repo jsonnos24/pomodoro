@@ -20,14 +20,45 @@ test('localDateKey formats local Y-M-D with zero padding', () => {
 });
 
 
-test('migrate passes through and normalizes v3 data', () => {
+const V4_DEFAULTS = {
+  version: 4, sessions: [], lengthPref: 25, sound: 'chime', muted: false,
+  preheat: false, endTime: '', plan: [], startOverride: '',
+  pills: ['CTS Emails', 'Rockstar Emails', 'CTS Pipeline', 'Lesson Planning', 'Song writing'],
+};
+
+test('migrate upgrades v3 to v4 with new defaults', () => {
   const v3 = { version: 3, sessions: [{ id: 'a', ts: 1, minutes: 25, task: 'x' }], lengthPref: 50, sound: 'bell', muted: true, preheat: true, endTime: '17:00' };
-  assert.deepStrictEqual(L.migrate(v3), v3);
+  const r = L.migrate(v3);
+  assert.strictEqual(r.version, 4);
+  assert.deepStrictEqual(r.sessions, v3.sessions);
+  assert.strictEqual(r.endTime, '17:00');
+  assert.deepStrictEqual(r.plan, []);
+  assert.strictEqual(r.startOverride, '');
+  assert.deepStrictEqual(r.pills, V4_DEFAULTS.pills);
 });
 
-test('migrate clamps invalid v3 fields to defaults', () => {
-  const r = L.migrate({ version: 3, sessions: 'nope', lengthPref: 99, sound: 'foo', muted: 'yes', preheat: 1, endTime: 42 });
-  assert.deepStrictEqual(r, { version: 3, sessions: [], lengthPref: 25, sound: 'chime', muted: false, preheat: false, endTime: '' });
+test('migrate passes through and normalizes a v4 object', () => {
+  const v4 = { ...V4_DEFAULTS, plan: [{ id: 'p1', name: 'Song writing', count: 3, done: false }], startOverride: '09:00', pills: ['One', 'Two'] };
+  assert.deepStrictEqual(L.migrate(v4), v4);
+});
+
+test('migrate clamps invalid v4 fields to defaults', () => {
+  const r = L.migrate({ version: 4, sessions: 'nope', lengthPref: 99, sound: 'foo', muted: 'yes', preheat: 1, endTime: 42, plan: 'x', startOverride: 5, pills: 'y' });
+  assert.deepStrictEqual(r, V4_DEFAULTS);
+});
+
+test('migrate coerces malformed plan entries', () => {
+  const r = L.migrate({ version: 4, plan: [{ name: 'A', count: 0 }, { id: 7, name: 5, count: 2.9, done: 1 }, null] });
+  assert.deepStrictEqual(r.plan, [
+    { id: 't0', name: 'A', count: 1, done: false },
+    { id: '7', name: '', count: 2, done: true },
+    { id: 't2', name: '', count: 1, done: false },
+  ]);
+});
+
+test('migrate seeds pills only when absent, allows empty after clearing', () => {
+  assert.deepStrictEqual(L.migrate({ version: 4 }).pills, V4_DEFAULTS.pills); // absent -> seeds
+  assert.deepStrictEqual(L.migrate({ version: 4, pills: [] }).pills, []);     // explicit empty kept
 });
 
 test('migrate converts v2 history into synthesized sessions', () => {
@@ -45,8 +76,8 @@ test('migrate converts old single-counter format into sessions', () => {
   assert.ok(r.sessions.every((s) => L.localDateKey(new Date(s.ts)) === '2026-06-15'));
 });
 
-test('migrate turns null into a fresh v3 default', () => {
-  assert.deepStrictEqual(L.migrate(null), { version: 3, sessions: [], lengthPref: 25, sound: 'chime', muted: false, preheat: false, endTime: '' });
+test('migrate turns null into a fresh v4 default', () => {
+  assert.deepStrictEqual(L.migrate(null), V4_DEFAULTS);
 });
 
 test('migrate ignores old format with zero count', () => {
