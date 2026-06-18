@@ -7,7 +7,7 @@ function loadLogic() {
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   const m = html.match(/\/\/ ==PURE-LOGIC-START==([\s\S]*?)\/\/ ==PURE-LOGIC-END==/);
   if (!m) throw new Error('pure-logic markers not found in index.html');
-  const names = ['localDateKey', 'migrate', 'pomodorosLeft', 'buildSchedule', 'scheduleFinish'];
+  const names = ['localDateKey', 'migrate', 'pomodorosLeft', 'buildSchedule', 'scheduleFinish', 'deadlineCheck'];
   const factory = new Function(`${m[1]}\nreturn { ${names.join(', ')} };`);
   return factory();
 }
@@ -138,4 +138,22 @@ test('buildSchedule returns empty for an empty or all-done plan', () => {
 test('scheduleFinish returns the last endMs or null', () => {
   assert.strictEqual(L.scheduleFinish([t('a', 1), t('b', 2)], OPTS), 95 * MIN);
   assert.strictEqual(L.scheduleFinish([], OPTS), null);
+});
+
+test('deadlineCheck reports slack when finishing before the deadline', () => {
+  const now = new Date(2026, 5, 18, 9, 0).getTime();
+  const finish = new Date(2026, 5, 18, 16, 15).getTime();
+  assert.deepStrictEqual(L.deadlineCheck(finish, '16:45', now), { madeIt: true, deltaMin: 30 });
+});
+
+test('deadlineCheck reports overrun when finishing after the deadline', () => {
+  const now = new Date(2026, 5, 18, 9, 0).getTime();
+  const finish = new Date(2026, 5, 18, 17, 5).getTime();
+  assert.deepStrictEqual(L.deadlineCheck(finish, '16:45', now), { madeIt: false, deltaMin: -20 });
+});
+
+test('deadlineCheck returns null without a deadline or finish', () => {
+  const now = new Date(2026, 5, 18, 9, 0).getTime();
+  assert.strictEqual(L.deadlineCheck(123, '', now), null);
+  assert.strictEqual(L.deadlineCheck(null, '16:45', now), null);
 });

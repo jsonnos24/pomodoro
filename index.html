@@ -619,6 +619,16 @@
     return blocks.length ? blocks[blocks.length - 1].endMs : null;
   }
 
+  // Compare the projected finish against today's "HH:MM" deadline. nowMs supplies the date.
+  function deadlineCheck(finishMs, endTime, nowMs) {
+    if (!endTime || finishMs == null) return null;
+    const now = new Date(nowMs);
+    const [h, m] = endTime.split(':').map(Number);
+    const deadline = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0).getTime();
+    const deltaMin = Math.round((deadline - finishMs) / 60000);
+    return { madeIt: deltaMin >= 0, deltaMin };
+  }
+
   // 'YYYY-MM-DD' -> epoch ms at local noon (used to place migrated counts on their day).
   function dayKeyToNoon(key) {
     const [y, m, d] = key.split('-').map(Number);
