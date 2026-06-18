@@ -261,19 +261,7 @@
     background: rgba(30, 44, 70, 0.8);
   }
 
-  /* Plan-your-day row */
-  .plan-row {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 8px 10px;
-    padding: 12px 16px;
-    margin-bottom: 24px;
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 12px;
-    background: var(--surface);
-  }
+  /* Plan panel */
   .plan-label {
     font-size: 13px;
     font-weight: 600;
@@ -292,15 +280,44 @@
     color-scheme: dark;
   }
   .end-time-input:focus { border-color: rgba(56, 189, 248, 0.35); }
-  .plan-result {
-    flex-basis: 100%;
-    text-align: center;
+  .plan-panel {
+    display: none;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    text-align: left;
+  }
+  .plan-panel.open { display: block; }
+  .plan-ctrl-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .plan-now-btn {
+    background: var(--surface);
+    color: var(--text-muted);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  .plan-now-btn:hover { color: var(--text); }
+  .add-task-input { margin: 10px 0; }
+  .task-list { display: flex; flex-direction: column; }
+  .plan-summary {
+    margin-top: 12px;
     font-size: 13px;
     color: var(--text);
+    text-align: center;
   }
-  .plan-result .plan-count { font-weight: 700; color: var(--accent-work); }
-  body.break-mode .plan-result .plan-count { color: var(--accent-break); }
-  .plan-result.plan-empty { color: var(--text-muted); }
+  .plan-summary .ok { color: var(--accent-work); font-weight: 700; }
+  .plan-summary .over { color: var(--accent-warmup); font-weight: 700; }
+  body.break-mode .plan-summary .ok { color: var(--accent-break); }
+  .plan-empty-msg { color: var(--text-muted); font-size: 12px; padding: 6px 0; }
 
   .stats-toggle {
     margin: 18px auto 0;
@@ -552,10 +569,27 @@
       maxlength="80"
     />
 
-    <div class="plan-row">
-      <label class="plan-label" for="endTimeInput">Done by</label>
-      <input type="time" id="endTimeInput" class="end-time-input" aria-label="What time you want to finish today" />
-      <span class="plan-result plan-empty" id="planResult">Set an end time to plan your day.</span>
+    <button class="stats-toggle plan-toggle" id="planToggle" aria-expanded="false" aria-controls="planPanel">
+      Plan <span class="chevron">▾</span>
+    </button>
+
+    <div class="plan-panel" id="planPanel">
+      <div class="plan-ctrl-row">
+        <label class="plan-label" for="startTimeInput">Start</label>
+        <input type="time" id="startTimeInput" class="end-time-input" aria-label="When the schedule starts" />
+        <button type="button" class="plan-now-btn" id="startNowBtn" title="Start from now">now</button>
+      </div>
+      <div class="plan-ctrl-row">
+        <label class="plan-label" for="endTimeInput">Done by</label>
+        <input type="time" id="endTimeInput" class="end-time-input" aria-label="What time you want to finish today" />
+      </div>
+
+      <div class="pill-row" id="pillRow"></div>
+
+      <input class="task-input add-task-input" id="addTaskInput" type="text" placeholder="Add a task…" maxlength="80" />
+
+      <div class="task-list" id="taskList"></div>
+      <div class="plan-summary" id="planSummary"></div>
     </div>
 
     <button class="stats-toggle history-toggle" id="historyToggle" aria-expanded="false" aria-controls="historyPanel">
@@ -724,7 +758,14 @@
   const historyList = document.getElementById('historyList');
   const historyMore = document.getElementById('historyMore');
   const endTimeInput = document.getElementById('endTimeInput');
-  const planResult = document.getElementById('planResult');
+  const planToggle = document.getElementById('planToggle');
+  const planPanel = document.getElementById('planPanel');
+  const startTimeInput = document.getElementById('startTimeInput');
+  const startNowBtn = document.getElementById('startNowBtn');
+  const pillRow = document.getElementById('pillRow');
+  const addTaskInput = document.getElementById('addTaskInput');
+  const taskList = document.getElementById('taskList');
+  const planSummary = document.getElementById('planSummary');
 
   // ── Progress ring setup ──
   const RADIUS = 100;
@@ -845,43 +886,49 @@
     renderHistory();
   }
 
-  // ── Plan your day: pomodoros remaining before your end time ──
-  const BREAK_MINUTES = REST_DURATION / 60; // breaks count against your time
+  // ── Plan ──
+  const BREAK_MINUTES = REST_DURATION / 60; // breaks count against the schedule
 
-  // Whole minutes from `now` until today's "HH:MM"; negative if that time has passed.
-  function minutesUntil(hhmm, now) {
-    const [h, m] = hhmm.split(':').map(Number);
-    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
-    return Math.floor((end.getTime() - now.getTime()) / 60000);
-  }
-
-  function renderPlan() {
-    const value = endTimeInput.value;
-    if (!value) {
-      planResult.classList.add('plan-empty');
-      planResult.textContent = 'Set an end time to plan your day.';
-      return;
-    }
-    const remaining = minutesUntil(value, new Date());
-    const n25 = pomodorosLeft(remaining, 25, BREAK_MINUTES);
-    const n50 = pomodorosLeft(remaining, 50, BREAK_MINUTES);
-    if (n25 === 0 && n50 === 0) {
-      planResult.classList.add('plan-empty');
-      planResult.textContent = "Workday's done — 0 pomodoros left.";
-      return;
-    }
-    planResult.classList.remove('plan-empty');
-    planResult.innerHTML =
-      `≈ <span class="plan-count">${n25}</span> × 25-min · ` +
-      `<span class="plan-count">${n50}</span> × 50-min left today`;
-  }
-
-  function setEndTime(value) {
+  function scheduleStartMs() {
     const data = loadData();
-    data.endTime = value;
+    const now = new Date();
+    if (data.startOverride) {
+      const [h, m] = data.startOverride.split(':').map(Number);
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0).getTime();
+    }
+    return now.getTime();
+  }
+
+  function renderPlan() { /* filled in Task 7 */ }
+
+  planToggle.addEventListener('click', () => {
+    const open = planPanel.classList.toggle('open');
+    planToggle.classList.toggle('open', open);
+    planToggle.setAttribute('aria-expanded', String(open));
+    if (open) renderPlan();
+  });
+
+  startTimeInput.addEventListener('input', () => {
+    const data = loadData();
+    data.startOverride = startTimeInput.value;
     saveData(data);
     renderPlan();
-  }
+  });
+
+  startNowBtn.addEventListener('click', () => {
+    const data = loadData();
+    data.startOverride = '';
+    saveData(data);
+    startTimeInput.value = '';
+    renderPlan();
+  });
+
+  endTimeInput.addEventListener('input', () => {
+    const data = loadData();
+    data.endTime = endTimeInput.value;
+    saveData(data);
+    renderPlan();
+  });
 
   // ── History ──
   let historyExpanded = false;
@@ -1062,7 +1109,6 @@
   });
   window.addEventListener('focus', stopAlerts);
 
-  endTimeInput.addEventListener('input', () => setEndTime(endTimeInput.value));
   setInterval(renderPlan, 60000); // tick down through the day while the tab is open
 
   function updateLengthToggleUI() {
@@ -1242,6 +1288,7 @@
   soundSelect.value = soundName;
   warmupCheck.checked = preheat;
   endTimeInput.value = bootData.endTime;
+  startTimeInput.value = bootData.startOverride;
   updateMuteUI();
   timeLeft = workMinutes * 60;
   updateLengthToggleUI();
