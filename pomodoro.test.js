@@ -7,7 +7,7 @@ function loadLogic() {
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   const m = html.match(/\/\/ ==PURE-LOGIC-START==([\s\S]*?)\/\/ ==PURE-LOGIC-END==/);
   if (!m) throw new Error('pure-logic markers not found in index.html');
-  const names = ['localDateKey', 'migrate', 'pomodorosLeft'];
+  const names = ['localDateKey', 'migrate', 'pomodorosLeft', 'buildSchedule', 'scheduleFinish'];
   const factory = new Function(`${m[1]}\nreturn { ${names.join(', ')} };`);
   return factory();
 }
@@ -100,4 +100,42 @@ test('pomodorosLeft returns zero when not even one session fits', () => {
   assert.strictEqual(L.pomodorosLeft(20, 25, 10), 0);
   assert.strictEqual(L.pomodorosLeft(0, 25, 10), 0);
   assert.strictEqual(L.pomodorosLeft(-30, 25, 10), 0); // end time already passed
+});
+
+const MIN = 60000;
+const t = (id, count, done = false) => ({ id, name: id, count, done });
+const OPTS = { startMs: 0, focusMin: 25, breakMin: 10 };
+
+test('buildSchedule lays a single task with internal breaks', () => {
+  // count 3 -> 3*25 + 2*10 = 95 min window
+  const b = L.buildSchedule([t('a', 3)], OPTS);
+  assert.strictEqual(b.length, 1);
+  assert.deepStrictEqual(b[0], { taskId: 'a', name: 'a', remaining: 3, startMs: 0, endMs: 95 * MIN });
+});
+
+test('buildSchedule puts one break between tasks', () => {
+  // a:1 -> [0,25]; break 10; b:2 -> [35, 35+50+10=95]
+  const b = L.buildSchedule([t('a', 1), t('b', 2)], OPTS);
+  assert.deepStrictEqual(b.map((x) => [x.startMs / MIN, x.endMs / MIN]), [[0, 25], [35, 95]]);
+});
+
+test('buildSchedule skips done and zero-count tasks', () => {
+  const b = L.buildSchedule([t('a', 1, true), t('b', 1), { id: 'c', name: 'c', count: 0, done: false }], OPTS);
+  assert.deepStrictEqual(b.map((x) => x.taskId), ['b']);
+  assert.strictEqual(b[0].startMs, 0); // b starts at the very start, done task consumes no time
+});
+
+test('buildSchedule honors a non-zero startMs', () => {
+  const b = L.buildSchedule([t('a', 1)], { startMs: 9 * 60 * MIN, focusMin: 50, breakMin: 10 });
+  assert.deepStrictEqual([b[0].startMs / MIN, b[0].endMs / MIN], [540, 590]);
+});
+
+test('buildSchedule returns empty for an empty or all-done plan', () => {
+  assert.deepStrictEqual(L.buildSchedule([], OPTS), []);
+  assert.deepStrictEqual(L.buildSchedule([t('a', 2, true)], OPTS), []);
+});
+
+test('scheduleFinish returns the last endMs or null', () => {
+  assert.strictEqual(L.scheduleFinish([t('a', 1), t('b', 2)], OPTS), 95 * MIN);
+  assert.strictEqual(L.scheduleFinish([], OPTS), null);
 });

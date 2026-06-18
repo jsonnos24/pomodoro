@@ -592,6 +592,33 @@
     return Math.floor((remainingMin + breakMin) / (focusMin + breakMin));
   }
 
+  // Lay the not-done tasks end-to-end. A `count=n` task = n focus blocks + (n-1) internal
+  // breaks; one break sits between consecutive tasks; no trailing break after the last session.
+  function buildSchedule(plan, opts) {
+    const focusMs = opts.focusMin * 60000;
+    const breakMs = opts.breakMin * 60000;
+    const blocks = [];
+    let cursor = opts.startMs;
+    let first = true;
+    for (const task of plan) {
+      if (task.done) continue;
+      const count = Math.max(0, Math.floor(task.count));
+      if (count <= 0) continue;
+      if (!first) cursor += breakMs;
+      const startMs = cursor;
+      const endMs = startMs + count * focusMs + (count - 1) * breakMs;
+      blocks.push({ taskId: task.id, name: task.name, remaining: count, startMs, endMs });
+      cursor = endMs;
+      first = false;
+    }
+    return blocks;
+  }
+
+  function scheduleFinish(plan, opts) {
+    const blocks = buildSchedule(plan, opts);
+    return blocks.length ? blocks[blocks.length - 1].endMs : null;
+  }
+
   // 'YYYY-MM-DD' -> epoch ms at local noon (used to place migrated counts on their day).
   function dayKeyToNoon(key) {
     const [y, m, d] = key.split('-').map(Number);
