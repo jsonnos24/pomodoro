@@ -487,6 +487,43 @@
   .hist-more:hover { opacity: 1; }
   body.break-mode .hist-more { color: var(--accent-break); }
 
+  /* Task rows (Plan panel) */
+  .task-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 6px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
+  .task-row:nth-child(odd) { background: rgba(255,255,255,0.03); } /* zebra */
+  .task-row.active { background: rgba(56,189,248,0.12); }
+  body.break-mode .task-row.active { background: rgba(167,139,250,0.12); }
+  .task-row.done .task-name { text-decoration: line-through; color: var(--text-muted); }
+  .task-reorder { display: flex; flex-direction: column; line-height: 0.7; }
+  .task-name { flex: 1; min-width: 0; cursor: text; overflow-wrap: anywhere; color: var(--text); }
+  .task-window { color: var(--text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .task-stepper { display: inline-flex; align-items: center; gap: 4px; }
+  .task-count { font-variant-numeric: tabular-nums; min-width: 22px; text-align: center; }
+  .task-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 1px 4px;
+    border-radius: 4px;
+  }
+  .task-btn:hover { color: var(--text); background: var(--surface); }
+  .task-edit-input {
+    flex: 1; min-width: 0;
+    font-family: inherit; font-size: 12px;
+    background: var(--surface); color: var(--text);
+    border: 1px solid rgba(56,189,248,0.35); border-radius: 4px;
+    padding: 1px 4px; outline: none;
+  }
+
   /* Audio controls (mute speaker + sound picker, centered above Reset) */
   .mute-btn {
     background: transparent;
@@ -899,7 +936,68 @@
     return now.getTime();
   }
 
-  function renderPlan() { /* filled in Task 7 */ }
+  function formatClock(ms) {
+    return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function planScheduleOpts() {
+    return { startMs: scheduleStartMs(), focusMin: workMinutes, breakMin: BREAK_MINUTES };
+  }
+
+  function rowHtmlForTask(task, block, isActive) {
+    const cls = 'task-row' + (isActive ? ' active' : '') + (task.done ? ' done' : '');
+    const window = block ? `${formatClock(block.startMs)}–${formatClock(block.endMs)}` : '';
+    const name = task.name ? escapeHtml(task.name) : 'Untitled task';
+    return `
+      <div class="${cls}" data-id="${escapeHtml(task.id)}">
+        <div class="task-reorder">
+          <button type="button" class="task-btn" data-act="up" aria-label="Move up">▲</button>
+          <button type="button" class="task-btn" data-act="down" aria-label="Move down">▼</button>
+        </div>
+        <span class="task-name" data-act="edit" title="Click to edit">${name}</span>
+        <span class="task-window">${window}</span>
+        <span class="task-stepper">
+          <button type="button" class="task-btn" data-act="dec" aria-label="Fewer pomodoros">−</button>
+          <span class="task-count">×${task.count}</span>
+          <button type="button" class="task-btn" data-act="inc" aria-label="More pomodoros">+</button>
+        </span>
+        <button type="button" class="task-btn task-check" data-act="check" aria-label="Mark done / skip">${task.done ? '↺' : '✓'}</button>
+        <button type="button" class="task-btn task-del" data-act="del" aria-label="Delete task">✕</button>
+      </div>`;
+  }
+
+  function renderPlan() {
+    const data = loadData();
+    const plan = data.plan;
+    const opts = planScheduleOpts();
+    const blocks = buildSchedule(plan, opts);
+    const blockByTask = {};
+    for (const b of blocks) blockByTask[b.taskId] = b;
+    const activeId = activeTaskId(plan);
+
+    if (!plan.length) {
+      taskList.innerHTML = '<div class="plan-empty-msg">Add tasks to plan your day.</div>';
+    } else {
+      taskList.innerHTML = plan.map((task) => rowHtmlForTask(task, blockByTask[task.id], task.id === activeId)).join('');
+    }
+
+    // Summary
+    const finish = scheduleFinish(plan, opts);
+    if (!plan.length) {
+      planSummary.textContent = '';
+    } else if (finish == null) {
+      planSummary.textContent = 'All done 🎉';
+    } else {
+      const check = deadlineCheck(finish, data.endTime, Date.now());
+      let tail = '';
+      if (check) {
+        tail = check.madeIt
+          ? ` · <span class="ok">✅ ${check.deltaMin} min early</span>`
+          : ` · <span class="over">⚠️ runs ${-check.deltaMin} min over</span>`;
+      }
+      planSummary.innerHTML = `Finishes ~${formatClock(finish)}${tail}`;
+    }
+  }
 
   planToggle.addEventListener('click', () => {
     const open = planPanel.classList.toggle('open');
