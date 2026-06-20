@@ -93,35 +93,6 @@
     .side-col > .stats-toggle:first-child { margin-top: 0; }
   }
 
-  /* Length toggle */
-  .length-toggle {
-    display: inline-flex;
-    gap: 4px;
-    padding: 4px;
-    margin-bottom: 18px;
-    background: var(--surface);
-    border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 12px;
-  }
-  .length-btn {
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 600;
-    padding: 6px 18px;
-    border-radius: 9px;
-    cursor: pointer;
-    transition: background 0.2s ease, color 0.2s ease;
-  }
-  .length-btn.active {
-    background: var(--accent-work);
-    color: #0c1221;
-  }
-  body.break-mode .length-btn.active { background: var(--accent-break); }
-  .length-toggle.locked { opacity: 0.4; pointer-events: none; }
-
   /* Session label */
   .session-label {
     font-size: 13px;
@@ -390,7 +361,6 @@
     box-shadow: 0 2px 12px rgba(245, 158, 11, 0.25);
   }
   body.warmup-mode .btn-primary:hover { box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35); }
-  body.warmup-mode .length-btn.active { background: var(--accent-warmup); }
   body.warmup-mode .flash-overlay { background: var(--glow-warmup); }
   body.warmup-mode .stats-toggle { color: var(--accent-warmup); }
 
@@ -605,10 +575,13 @@
 
   <div class="card">
     <div class="timer-col">
-    <div class="length-toggle" id="lengthToggle">
-      <button class="length-btn" id="len25" data-min="25">25</button>
-      <button class="length-btn" id="len50" data-min="50">50</button>
-    </div>
+    <input
+      class="task-input"
+      id="taskInput"
+      type="text"
+      placeholder="What are you focusing on?"
+      maxlength="80"
+    />
 
     <label class="warmup-toggle" id="warmupToggle">
       <input type="checkbox" id="warmupCheck">
@@ -640,14 +613,6 @@
     </div>
 
     <button class="btn btn-secondary reset-btn" id="resetBtn">Reset</button>
-
-    <input
-      class="task-input"
-      id="taskInput"
-      type="text"
-      placeholder="What are you focusing on?"
-      maxlength="80"
-    />
 
     </div><!-- /.timer-col -->
 
@@ -692,7 +657,7 @@
   const REST_DURATION = 10 * 60;
   const WARMUP_DURATION = 5 * 60;
   const STORAGE_KEY = 'pomodoro_data';
-  let workMinutes = 25; // 25 or 50, restored from lengthPref on init
+  const workMinutes = 25; // every focus session is 25 minutes
 
   // ==PURE-LOGIC-START==
   // DOM-free, deterministic helpers. `today` is always passed in (never new Date() here).
@@ -830,9 +795,6 @@
   const resetBtn = document.getElementById('resetBtn');
   const flash = document.getElementById('flash');
   const taskInput = document.getElementById('taskInput');
-  const lengthToggle = document.getElementById('lengthToggle');
-  const len25Btn = document.getElementById('len25');
-  const len50Btn = document.getElementById('len50');
   const warmupToggle = document.getElementById('warmupToggle');
   const warmupCheck = document.getElementById('warmupCheck');
   const muteBtn = document.getElementById('muteBtn');
@@ -1410,37 +1372,12 @@
 
   setInterval(renderPlan, 60000); // tick down through the day while the tab is open
 
-  function updateLengthToggleUI() {
-    len25Btn.classList.toggle('active', workMinutes === 25);
-    len50Btn.classList.toggle('active', workMinutes === 50);
-    // Locked while a session is started/running; editable only when idle/armed.
+  // Lock the warm-up toggle while a session is started/running; editable when idle/armed.
+  function updateLockUI() {
     const locked = hasStarted || running;
-    lengthToggle.classList.toggle('locked', locked);
-    // Also disable the buttons so keyboard users can't trigger them while locked
-    // (pointer-events:none only blocks mouse/touch).
-    len25Btn.disabled = locked;
-    len50Btn.disabled = locked;
     warmupToggle.classList.toggle('locked', locked);
     warmupCheck.disabled = locked;
   }
-
-  function setLength(minutes) {
-    if (hasStarted || running) return; // only changeable when idle
-    workMinutes = minutes;
-    const data = loadData();
-    data.lengthPref = minutes;
-    saveData(data);
-    // When idle the phase is always 'work', so this re-arms the displayed work timer
-    // to the new length. The guard is harmless defense.
-    if (phase === 'work') {
-      timeLeft = workMinutes * 60;
-      updateDisplay();
-    }
-    updateLengthToggleUI();
-  }
-
-  len25Btn.addEventListener('click', () => setLength(25));
-  len50Btn.addEventListener('click', () => setLength(50));
 
   warmupCheck.addEventListener('change', () => {
     if (hasStarted || running) { warmupCheck.checked = preheat; return; } // locked mid-session
@@ -1486,7 +1423,7 @@
       playEndSound();
       triggerFlash();
       startTitleFlash("Warmed up — let's go 🔥");
-      updateLengthToggleUI();
+      updateLockUI();
       updateDisplay();
     } else if (phase === 'work') {
       // Work done -> record it and auto-start the 10-minute rest, still running.
@@ -1503,7 +1440,7 @@
       playEndAlert();
       triggerFlash();
       startTitleFlash('🍅 Break time!');
-      updateLengthToggleUI();
+      updateLockUI();
       updateDisplay();
       // still running, so the ring shows "Tap to pause" — the user can pause the rest.
     } else {
@@ -1516,7 +1453,7 @@
       triggerFlash();
       startTitleFlash('✅ Back to work!');
       hasStarted = false;
-      updateLengthToggleUI();
+      updateLockUI();
       updateDisplay();
     }
   }
@@ -1553,13 +1490,13 @@
     running = true;
     hasStarted = true;
     interval = setInterval(tick, 1000);
-    updateLengthToggleUI();
+    updateLockUI();
     updateDisplay();
   }
 
   function pause() {
     stopInterval();
-    updateLengthToggleUI();
+    updateLockUI();
     updateDisplay();
   }
 
@@ -1570,7 +1507,7 @@
     hasStarted = false;
     timeLeft = workMinutes * 60;
     applyPhaseMode();
-    updateLengthToggleUI();
+    updateLockUI();
     updateDisplay();
   }
 
@@ -1590,7 +1527,6 @@
 
   // ── Init ──
   const bootData = loadData();
-  workMinutes = bootData.lengthPref;
   soundName = bootData.sound;
   muted = bootData.muted;
   preheat = bootData.preheat;
@@ -1600,7 +1536,7 @@
   startTimeInput.value = bootData.startOverride;
   updateMuteUI();
   timeLeft = workMinutes * 60;
-  updateLengthToggleUI();
+  updateLockUI();
   renderHistory();
   renderPlan();
   renderPills();
