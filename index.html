@@ -21,7 +21,6 @@
     --ring-track: rgba(51, 65, 85, 0.5);
     --glow-work: rgba(56, 189, 248, 0.15);
     --glow-break: rgba(167, 139, 250, 0.15);
-    --glow-warmup: rgba(245, 158, 11, 0.16);
   }
 
   body {
@@ -120,7 +119,6 @@
     border-radius: 50%;
   }
   body.break-mode .timer-ring:focus-visible { outline-color: var(--accent-break); }
-  body.warmup-mode .timer-ring:focus-visible { outline-color: var(--accent-warmup); }
 
   .timer-ring svg {
     width: 100%;
@@ -349,68 +347,6 @@
   }
   body.break-mode .flash-overlay { background: var(--glow-break); }
 
-  /* Warm-up ("pre-heat") mode — amber */
-  body.warmup-mode::before { background: var(--glow-warmup); }
-  body.warmup-mode .session-label { color: var(--accent-warmup); }
-  body.warmup-mode .timer-ring .progress {
-    stroke: var(--accent-warmup);
-    filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.35));
-  }
-  body.warmup-mode .btn-primary {
-    background: var(--accent-warmup);
-    box-shadow: 0 2px 12px rgba(245, 158, 11, 0.25);
-  }
-  body.warmup-mode .btn-primary:hover { box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35); }
-  body.warmup-mode .flash-overlay { background: var(--glow-warmup); }
-  body.warmup-mode .stats-toggle { color: var(--accent-warmup); }
-
-  /* Warm-up toggle (switch under the length picker) */
-  .warmup-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
-    cursor: pointer;
-    user-select: none;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text);
-  }
-  .warmup-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
-  .warmup-switch {
-    flex: none;
-    width: 34px;
-    height: 18px;
-    border-radius: 10px;
-    background: var(--surface);
-    border: 1px solid rgba(255,255,255,0.08);
-    position: relative;
-    transition: background 0.2s ease;
-  }
-  .warmup-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #fff;
-    transition: transform 0.2s ease;
-  }
-  .warmup-toggle input:checked + .warmup-switch { background: var(--accent-warmup); }
-  .warmup-toggle input:checked + .warmup-switch::after { transform: translateX(16px); }
-  .warmup-toggle input:focus-visible + .warmup-switch { outline: 2px solid var(--accent-warmup); outline-offset: 2px; }
-  .warmup-toggle.locked { opacity: 0.4; pointer-events: none; }
-  .warmup-hint {
-    font-size: 10px;
-    color: var(--text-muted);
-    margin-bottom: 22px;
-    max-width: 240px;
-    margin-left: auto;
-    margin-right: auto;
-  }
-
   /* History */
   .history-panel {
     display: none;
@@ -583,14 +519,7 @@
       maxlength="80"
     />
 
-    <label class="warmup-toggle" id="warmupToggle">
-      <input type="checkbox" id="warmupCheck">
-      <span class="warmup-switch" aria-hidden="true"></span>
-      <span class="warmup-text">🔥 Just pre-heat the oven · 5 min</span>
-    </label>
-    <p class="warmup-hint">Set up your workspace for 5 min — then your session begins.</p>
-
-    <div class="session-label" id="sessionLabel">Work Session</div>
+    <div class="session-label" id="sessionLabel">Focus Session</div>
 
     <div class="timer-ring" id="timerRing" role="button" tabindex="0" aria-label="Start or pause the timer">
       <svg viewBox="0 0 220 220">
@@ -655,7 +584,6 @@
 <script>
   // ── Config ──
   const REST_DURATION = 10 * 60;
-  const WARMUP_DURATION = 5 * 60;
   const STORAGE_KEY = 'pomodoro_data';
   const workMinutes = 25; // every focus session is 25 minutes
 
@@ -795,8 +723,6 @@
   const resetBtn = document.getElementById('resetBtn');
   const flash = document.getElementById('flash');
   const taskInput = document.getElementById('taskInput');
-  const warmupToggle = document.getElementById('warmupToggle');
-  const warmupCheck = document.getElementById('warmupCheck');
   const muteBtn = document.getElementById('muteBtn');
   const soundSelect = document.getElementById('soundSelect');
   const historyToggle = document.getElementById('historyToggle');
@@ -821,13 +747,12 @@
 
   // ── State ──
   let timeLeft = workMinutes * 60;
-  let phase = 'work'; // 'warmup' | 'work' | 'break'
+  let phase = 'work'; // 'work' | 'break'
   let running = false;
   let interval = null;
   let hasStarted = false; // true once the current session has been started (until reset/re-arm)
   let soundName = 'chime'; // chime | bell | arcade, restored on init
   let muted = false;       // restored on init
-  let preheat = false;     // 5-min "pre-heat the oven" warm-up enabled; restored on init
 
   // ── Audio (synthesized via Web Audio API; one shared, lazily-created context) ──
   let audioCtx = null;
@@ -866,11 +791,6 @@
     const ctx = getAudioCtx();
     if (!ctx) return;
     try { (SOUNDS[name] || SOUNDS.chime)(ctx, ctx.currentTime); } catch (e) { /* ignore */ }
-  }
-
-  // Single end-of-session sound, respects the mute toggle (used for the gentle warm-up roll-over).
-  function playEndSound() {
-    if (!muted) playSound(soundName);
   }
 
   // Vibrate on mobile where supported. Independent of mute — it's the silent nudge.
@@ -990,6 +910,7 @@
     const id = activeTaskId(data.plan);
     const task = id ? data.plan.find((x) => x.id === id) : null;
     taskInput.value = task ? task.name : '';
+    updateSessionLabel();
   }
 
   function renderPlan() {
@@ -1295,26 +1216,24 @@
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
-  // ── Phase helpers (warmup | work | break) ──
+  // ── Phase helpers (work | break) ──
   function phaseDuration(p) {
-    if (p === 'warmup') return WARMUP_DURATION;
     if (p === 'break') return REST_DURATION;
     return workMinutes * 60;
   }
-  function phaseLabel(p) {
-    if (p === 'warmup') return 'Pre-Heating';
-    if (p === 'break') return 'Break Time';
-    return 'Work Session';
-  }
   function phaseTitleWord(p) {
-    if (p === 'warmup') return 'Pre-heating';
     if (p === 'break') return 'Break';
     return 'Focus';
   }
+  // The label shows the current task during focus (typed name, or the active
+  // planned task auto-loaded into the field), falling back to "Focus Session".
+  function updateSessionLabel() {
+    if (phase === 'break') { sessionLabel.textContent = 'Break Time'; return; }
+    sessionLabel.textContent = taskInput.value.trim() || 'Focus Session';
+  }
   function applyPhaseMode() {
-    document.body.classList.toggle('warmup-mode', phase === 'warmup');
     document.body.classList.toggle('break-mode', phase === 'break');
-    sessionLabel.textContent = phaseLabel(phase);
+    updateSessionLabel();
   }
 
   function updateDisplay() {
@@ -1372,20 +1291,8 @@
 
   setInterval(renderPlan, 60000); // tick down through the day while the tab is open
 
-  // Lock the warm-up toggle while a session is started/running; editable when idle/armed.
-  function updateLockUI() {
-    const locked = hasStarted || running;
-    warmupToggle.classList.toggle('locked', locked);
-    warmupCheck.disabled = locked;
-  }
-
-  warmupCheck.addEventListener('change', () => {
-    if (hasStarted || running) { warmupCheck.checked = preheat; return; } // locked mid-session
-    preheat = warmupCheck.checked;
-    const data = loadData();
-    data.preheat = preheat;
-    saveData(data);
-  });
+  // Keep the label in sync as the user types (or clears) the focus name.
+  taskInput.addEventListener('input', updateSessionLabel);
 
   function updateMuteUI() {
     muteBtn.textContent = muted ? '🔇' : '🔊';
@@ -1415,17 +1322,7 @@
   }
 
   function advancePhase() {
-    if (phase === 'warmup') {
-      // Warm-up done -> roll straight into the focus session, still running.
-      phase = 'work';
-      timeLeft = workMinutes * 60;
-      applyPhaseMode();
-      playEndSound();
-      triggerFlash();
-      startTitleFlash("Warmed up — let's go 🔥");
-      updateLockUI();
-      updateDisplay();
-    } else if (phase === 'work') {
+    if (phase === 'work') {
       // Work done -> record it and auto-start the 10-minute rest, still running.
       recordSession();
       // Burn one pomodoro off the active task, then surface the next task's name.
@@ -1440,7 +1337,6 @@
       playEndAlert();
       triggerFlash();
       startTitleFlash('🍅 Break time!');
-      updateLockUI();
       updateDisplay();
       // still running, so the ring shows "Tap to pause" — the user can pause the rest.
     } else {
@@ -1453,7 +1349,6 @@
       triggerFlash();
       startTitleFlash('✅ Back to work!');
       hasStarted = false;
-      updateLockUI();
       updateDisplay();
     }
   }
@@ -1481,22 +1376,14 @@
     if (!hasStarted && phase === 'work' && !taskInput.value.trim()) {
       loadActiveTaskName();
     }
-    // Fresh/armed start with warm-up enabled -> begin with the 5-min pre-heat phase.
-    if (!hasStarted && phase === 'work' && preheat) {
-      phase = 'warmup';
-      timeLeft = WARMUP_DURATION;
-      applyPhaseMode();
-    }
     running = true;
     hasStarted = true;
     interval = setInterval(tick, 1000);
-    updateLockUI();
     updateDisplay();
   }
 
   function pause() {
     stopInterval();
-    updateLockUI();
     updateDisplay();
   }
 
@@ -1507,7 +1394,6 @@
     hasStarted = false;
     timeLeft = workMinutes * 60;
     applyPhaseMode();
-    updateLockUI();
     updateDisplay();
   }
 
@@ -1529,18 +1415,16 @@
   const bootData = loadData();
   soundName = bootData.sound;
   muted = bootData.muted;
-  preheat = bootData.preheat;
   soundSelect.value = soundName;
-  warmupCheck.checked = preheat;
   endTimeInput.value = bootData.endTime;
   startTimeInput.value = bootData.startOverride;
   updateMuteUI();
   timeLeft = workMinutes * 60;
-  updateLockUI();
   renderHistory();
   renderPlan();
   renderPills();
   if (!taskInput.value.trim()) loadActiveTaskName();
+  updateSessionLabel();
   // On desktop the side column has room, so open the Plan panel by default.
   if (window.matchMedia && window.matchMedia('(min-width: 900px)').matches) {
     planPanel.classList.add('open');
